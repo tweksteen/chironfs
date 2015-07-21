@@ -1,0 +1,589 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<html>
+<head>
+<link rel='stylesheet' type='text/css' href='chironfs.css' media='screen' />
+</head>
+<body>
+<div class='stdtext'>
+<H1 CLASS="western">The Chiron FS HOWTO</H1>
+<H4>Edited by</H4>
+<H3>Luis Ot&aacute;vio de Colla Furquim</H3>
+<P></P>
+<P><A href='contact.html'>Contact</a></P>
+<P></P>
+<P><B>Table of Contents</B></P>
+<P><A HREF='#intro'>Introduction</A></P>
+<P>1. <A HREF='#install1'>How to Install and Test Chiron FS</A></P>
+<P STYLE="margin-left: 1.06cm">a) <A HREF='#install2'>Obtaining and Installing Chiron FS</A></P>
+<P STYLE="margin-left: 1.06cm">b) <A HREF='#test'>Testing Chiron FS</A></P>
+<P>2. <A HREF='#using'>Using Chiron FS</A></P>
+<P>3. <A HREF='#fstab'>Putting in fstab</A></P>
+<P>4. <A HREF='#examples'>Some Examples</A></P>
+<P STYLE="margin-left: 1.06cm">a) <A HREF='#srv'>File and web servers</A></P>
+<P STYLE="margin-left: 2.12cm">i) <A HREF='#net'>Network storage</A></P>
+<P STYLE="margin-left: 2.12cm">ii) <A HREF='#local'>Local storage</A></P>
+<P STYLE="margin-left: 2.12cm">iii) <A HREF='#netlocal'>Local and network storage</A></P>
+<P STYLE="margin-left: 1.06cm">b) <A HREF='#desktop'>Desktop with network backup</A></P>
+<P>5. <A HREF='#fail'>Replica failures</A></P>
+<P>6. <A HREF='#hash'>Hash, file descriptors and ulimit considerations</A></P>
+<P>7. <A HREF='#support'>Support</A></P>
+<P></P>
+<P></P>
+<H2>Introduction</H2>
+<P LANG="en"><A NAME="intro"></A>
+This software is licensed under the terms of <A HREF='http://www.gnu.org/licenses/gpl-3.0.html'>GPLv3</A>.</P>
+<P LANG="en">
+COVERED CODE IS PROVIDED UNDER THIS LICENSE ON AN "AS IS" BASIS, 
+WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, 
+INCLUDING, WITHOUT LIMITATION, WARRANTIES THAT THE COVERED CODE 
+IS FREE OF DEFECTS, MERCHANTABLE, FIT FOR A PARTICULAR PURPOSE
+OR NON-INFRINGING. THE ENTIRE RISK AS TO THE QUALITY AND 
+PERFORMANCE OF THE COVERED CODE IS WITH YOU. SHOULD ANY COVERED 
+CODE PROVE DEFECTIVE IN ANY RESPECT, YOU (NOT THE INITIAL 
+DEVELOPER OR ANY OTHER CONTRIBUTOR) ASSUME THE COST OF ANY 
+NECESSARY SERVICING, REPAIR OR CORRECTION. THIS DISCLAIMER OF 
+WARRANTY CONSTITUTES AN ESSENTIAL PART OF THIS LICENSE. NO USE 
+OF ANY COVERED CODE IS AUTHORIZED HEREUNDER EXCEPT UNDER
+THIS DISCLAIMER. IN THE EVENT THAT YOUR LOCAL LAW MAKES THIS 
+STATEMENT OR THE LICENSE PARTIALLY OR TOTALLY UNAPLICABLE,
+THEN YOU HAVE NO AUTHORIZATION TO USE IT AND INSISTING IN
+SUCH USE IS ILEGAL!</P>
+<P LANG="en">Use at your own risk!</P>
+<P LANG="en"></P>
+<H2>Chapter&nbsp;1.&nbsp;How to Install and Test Chiron FS</H2><A NAME="install1"></A>
+<H2 LANG="en">a) Obtaining and Installing Chiron FS 
+</H2>
+<P LANG="en"><A NAME="install2"></A>
+You may download ChironFS from <a href="http://code.google.com/p/chironfs/downloads/list">Google Code</a>.
+There are some choices there:
+<ul class='stdlist' style='margin-left: 3em;'>
+ <li>Source code, both as a tarball or RPM format;</li>
+ <li>Binary
+   <ul class='stdlist' style='margin-left: 6em;'>
+      <li>i386, both DEB and RPM format;</li>
+      <li>64bit, both amd64/DEB and x86_64/RPM format</li>
+   </ul>
+ </li>
+</ul>
+For the tarball, named chironfs-&lt;current_version&gt;.tar.gz, you will 
+have to make sure that your system have FUSE installed, BOTH BINARY and
+DEVELOPMENT files. If you have a recent distribution you probably
+have it installed or can do it with few commands like apt-get, yum,
+yast, etc. If you don't have it you may download it from its 
+<a href="http://fuse.sourceforge.net">site</a>. 
+</P>
+<P LANG="en">Unpack it wherever you want and you will have a
+directory named chironfs-&lt;current_version&gt;.</P>
+<P LANG="en">Just enter the directory and compile it with the
+commands:</P>
+<div class='codebox'>
+<P LANG="en">cd /path/to/source/chironfs-&lt;current_version&gt; 
+</P>
+<P LANG="en">./configure [any configure options you want]</P>
+<P LANG="en">make</P>
+<P LANG="en">make install</P>
+</div>
+<P LANG="en">
+For the source in RPM format, just type:
+<div class='codebox'>
+<P LANG="en">
+rpmbuild -ba chironfs-&lt;current_version&gt;.src.rpm
+</P>
+</div>
+and this will compile ChironFS, generating a chironfs-&lt;current_version&gt;&lt;your_architecture&gt;.rpm.
+Then you may install it with this command:
+<div class='codebox'>
+<P LANG="en">
+rpm -i chironfs-&lt;current_version&gt;-&lt;your_architecture&gt;.rpm
+</P>
+</div>
+<P LANG="en">
+For the binaries in RPM format, just type:
+<div class='codebox'>
+<P LANG="en">
+rpm -i chironfs-&lt;current_version&gt;-&lt;architecture&gt;.rpm
+</P>
+</div>
+</P>
+<P LANG="en">
+For the binaries in DEB format, just type:
+<div class='codebox'>
+<P LANG="en">
+dpkg -i chironfs_&lt;current_version&gt;_&lt;architecture&gt;.deb
+</P>
+</div>
+</P>
+<P><BR><BR>
+</P>
+<H2>b) Testing Chiron FS</H2><A NAME="test"></A>
+<P><BR><BR>
+</P>
+<P>Create 3 directories, one for the virtual filesystem and two for
+the replicas and do the mount with the commands;</P>
+<div class='codebox'>
+<P>mkdir /virtual /real1 /real2</P>
+<P>chironfs /real1=/real2 /virtual</P>
+</div>
+<P>Confirm they are correctly mounted with the command:<BR><BR><BR>
+</P>
+<div class='codebox'>
+<P>df</P>
+</div>
+<p></p>
+<P>You should see a line like this:</P>
+<div class='codebox'>
+<P>/real1=/real2&nbsp;&nbsp; 138456396 130613500&nbsp;&nbsp;&nbsp;
+809640 100% /virtual</P>
+</div>
+<P><BR><BR>
+</P>
+<P>Try to create/modify/delete some files in /virtual and check for
+the reflections in /real1 and /real2. <BR><BR><BR>
+</P>
+<P>At this point you may be convinced that you have everything you
+need to start replicating your files. So umount it with the command:<BR><BR><BR>
+</P>
+<div class='codebox'>
+<P>fusermount -u /virtual</P>
+</div>
+<H2>Chapter 2. Using Chiron FS</H2><A NAME="using"></A>
+<P>In the test above, we just made the simplest use of Chiron FS, but
+we did not used 2 options that, despite being OPTIONAL, I think that
+in production environment they are indeed essential. <BR><BR><BR>
+</P>
+<P>First, in a corporative environment, we want to share the access
+to many users. But, FUSE were implemented with individual user
+defaults and, this way, only the user who mounted the virtual
+system has the needed visibility, others just see the empty mount
+point. So, to allow others, we MUST use the FUSE option allow_other.
+<BR><BR><BR>
+</P>
+<P>Secondly, we want to be reported if some replica fails. The system
+will continue running, but we don't want to discover the failures
+when the last replica fails and the system stops. We want to get the
+failed replica up and running as soon as possible! So we need to
+activate the logs! <BR><BR><BR>
+</P>
+<P>So, the example above should get better if we change the mount
+command to this:</P>
+<div class='codebox'>
+<P>chironfs --fuseoptions allow_other --log /var/log/chironfs.log
+/real1=/real2 /virtual</P>
+</div>
+<P>If you want more replicas, 3 for example, type:
+<div class='codebox'>
+<P>chironfs --fuseoptions allow_other --log /var/log/chironfs.log
+/real1=/real2=/real3 /virtual</P>
+</div>
+</P>
+<P>Now suppose, in this example, that /real2 is a known slow 
+filesystem, I mean much slower than /real1 and /real3. When
+ChironFS has to write data, it must write to all of them. But
+when it has to read, it chooses just one to read. Then, we don't
+want that ChironFS give equal chances of reading to /real2. As
+ChironFS uses a round robin algorithm, if we don't tell it that
+/real2 is slow, it will read from /real2 at each third read. So,
+to avoid this, give a low priority to real2 and ChironFS will
+read from it only if /real1 AND /real3 fails. To make this, type
+a colon just before the /real2 path:
+<div class='codebox'>
+<P>chironfs --fuseoptions allow_other --log /var/log/chironfs.log
+/real1=<span style="font-weight: bolder; font-size: 14px;">:</span>/real2=/real3 /virtual</P>
+</div>
+</P>
+<P><BR><BR>
+</P>
+<P><BR><BR>
+</P>
+<H2>Chapter 3. Putting in fstab</H2><A NAME="fstab"></A>
+<P>So, to mount it automatically at boot time, simply add lines to
+your /etc/fstab file as shown in the example below. The first column
+must start with "chironfs#" followed, without spaces, by the list
+of replicas separated by equal signs. The second column is you mount
+point. The third column must be "fuse". The fourth column are the
+fuse and chironfs options separated by colons. The last two columns
+are fstab options and works just as you can see in the fstab
+documentation.</P>
+<P><BR><BR>
+</P>
+<div class='codebox'>
+<P>chironfs#/real1=/real2 /virtual fuse
+allow_other,log=/var/log/chironfs.log 0 0</P>
+</div>
+<P><BR><BR>
+</P>
+<H2>Chapter 4. Some Examples</H2><A NAME="examples"></A>
+<P><BR><BR>
+</P>
+<P>So let's see some real world examples:</P>
+<H2 LANG="en">a) File and web servers</H2><A NAME="srv"></A>
+<P LANG="en"><BR><BR>
+</P>
+<P LANG="en">In this example we will see 3 different solutions to
+replication of data on a LAN with 2 servers, tipically a file server
+and a web server.</P>
+<P LANG="en"><BR><BR>
+</P>
+<H2 LANG="en"><FONT SIZE=4>i) Network storage</FONT></H2><A NAME="net"></A>
+<P LANG="en"><FONT SIZE=3>In this solution, we will need 2 more
+servers, they will be the servers' servers, sharing their filesystems
+using any protocol like NFS, SSHFS, etc. For the purpose of the
+example, we will use NFS. The servers' servers will have the
+hostnames set to nfs1 and nfs2 and will export the directory /data.
+The file and web servers will have their hostnames set to fileserver
+and webserver, respectively and will be the users' servers.</FONT></P>
+<P LANG="en"><BR><BR>
+</P>
+<P LANG="en"><FONT SIZE=3>Make the local mount point for all the real
+and virtual filesystems in each of the users's servers:</FONT></P>
+<div class='codebox'>
+<P LANG="en"><FONT SIZE=3>mkdir /real1 /real2 /virtual</FONT></P>
+</div>
+<P LANG="en"><BR><BR>
+</P>
+<P LANG="en"><FONT SIZE=3>Update their fstabs by adding these 3
+lines:</FONT></P>
+<P><BR><BR>
+</P>
+<div class='codebox'>
+<P>nfs1:/data /real1 nfs auto 0 0</P>
+<P>nfs2:/data /real2 nfs auto 0 0</P>
+<P>chironfs#/real1=/real2 /virtual fuse
+allow_other,log=/var/log/chironfs.log 0 0</P>
+</div>
+<P><BR><BR>
+</P>
+<P>Now you may setup your users' servers. Follow the specific
+instructions of the services you want to setup, attempting to make
+the fileserver export the /virtual directory to your users and
+putting the webserver's  documents trees below the /virtual
+directory.</P>
+<P LANG="en"><BR><BR>
+</P>
+<P LANG="en"><FONT SIZE=3>For achieving no single point of failure
+you should provide network hardware backups, like 2 NICs for each
+server, connected to redundant bridges.</FONT></P>
+<P LANG="en"><BR><BR>
+</P>
+<P LANG="en"><FONT SIZE=3>Finally setup heartbeat in the users'
+servers  to make any failure in one of them be automatically replaced
+by one of the other users' servers.</FONT></P>
+<P LANG="en"><BR><BR>
+</P>
+<H2 LANG="en"><FONT SIZE=4>ii) Local storage</FONT></H2><A NAME="local"></A>
+<P LANG="en"><FONT SIZE=3>In this solution, we will make the users'
+server be the servers' servers too, sharing their filesystems using
+any protocol like NFS, SSHFS, etc. For the purpose of the example, we
+will use NFS again. The file and the web servers will have their
+hostnames set to fileserver and webserver , respectively and will be
+the users' servers.</FONT></P>
+<P LANG="en"><BR><BR>
+</P>
+<P LANG="en"><FONT SIZE=3>Make the local mount point for all the real
+and virtual filesystems in each of the users's servers:</FONT></P>
+<div class='codebox'>
+<P LANG="en"><FONT SIZE=3>mkdir /real1 /real2 /virtual</FONT></P>
+</div>
+<P LANG="en"><BR><BR>
+</P>
+<P LANG="en"><FONT SIZE=3>Update the fstab on the fileserver by
+adding these 2 lines:</FONT></P>
+<P><BR><BR>
+</P>
+<div class='codebox'>
+<P>webserver:/real1 /real1 nfs auto 0 0</P>
+<P>chironfs#/real2=<span style="font-weight: bolder; font-size: 14px;">:</span>/real1 /virtual fuse
+allow_other,log=/var/log/chironfs.log 0 0</P>
+</div>
+<P><BR><BR>
+</P>
+<P LANG="en"><FONT SIZE=3>Update the fstab on the webserver by adding
+these 2 lines:</FONT></P>
+<P><BR><BR>
+</P>
+<div class='codebox'>
+<P>fileserver:/real2 /real2 nfs auto 0 0</P>
+<P>chironfs#/real1=<span style="font-weight: bolder; font-size: 14px;">:</span>/real2 /virtual fuse
+allow_other,log=/var/log/chironfs.log 0 0</P>
+</div>
+<P><BR><BR>
+</P>
+<P>Now you may setup your users' servers. Follow the specific
+instructions of the services you want to setup, attempting to make
+the fileserver export the /virtual directory to your users and
+putting the webserver's  documents trees below the /virtual
+directory.</P>
+<P LANG="en"><BR><BR>
+</P>
+<P LANG="en"><FONT SIZE=3>For achieving no single point of failure
+you should provide network hardware backups, like 2 NICs for each
+server, connected to redundant bridges.</FONT></P>
+<P LANG="en"><BR><BR>
+</P>
+<P LANG="en"><FONT SIZE=3>Finally setup heartbeat in the users'
+servers  to make any failure in one of them be automatically replaced
+by one of the other users' servers.</FONT></P>
+<P LANG="en"><BR><BR>
+</P>
+<H2 LANG="en"><FONT SIZE=4>iii) Local and network storage</FONT></H2><A NAME="netlocal"></A>
+<P LANG="en"><BR><BR>
+</P>
+<P LANG="en"><FONT SIZE=3>You can combine the above 2 solutions in a
+third solution, having local and network storage.</FONT></P>
+<P LANG="en"><BR><BR>
+</P>
+<P LANG="en"><FONT SIZE=3>Make the local mount point for all the real
+and virtual filesystems in each of the users's servers:</FONT></P>
+<div class='codebox'>
+<P LANG="en"><FONT SIZE=3>mkdir /real1 /real2 /real3 /virtual</FONT></P>
+</div>
+<P LANG="en"><BR><BR>
+</P>
+<P LANG="en"><FONT SIZE=3>Update their fstabs by adding these 3
+lines:</FONT></P>
+<P><BR><BR>
+</P>
+<div class='codebox'>
+<P>nfs1:/data /real1 nfs auto 0 0</P>
+<P>nfs2:/data /real2 nfs auto 0 0</P>
+<P>chironfs#/real3=<span style="font-weight: bolder; font-size: 14px;">:</span>/real2=<span style="font-weight: bolder; font-size: 14px;">:</span>/real1 /virtual fuse
+allow_other,log=/var/log/chironfs.log 0 0</P>
+</div>
+<P><BR><BR>
+</P>
+<P>Now you may setup your users' servers. Follow the specific
+instructions of the services you want to setup, attempting to make
+the fileserver export the /virtual directory to your users and
+putting the webserver's  documents trees below the /virtual
+directory.</P>
+<P LANG="en"><BR><BR>
+</P>
+<P LANG="en"><FONT SIZE=3>For achieving no single point of failure
+you should provide network hardware backups, like 2 NICs for each
+server, connected to redundant bridges.</FONT></P>
+<P LANG="en"><BR><BR>
+</P>
+<P LANG="en"><FONT SIZE=3>Finally setup heartbeat in the users'
+servers  to make any failure in one of them be automatically replaced
+by one of the other users' servers.</FONT></P>
+<P LANG="en"><BR><BR>
+</P>
+<H2 LANG="en"></H2>
+<H2 LANG="en"><FONT SIZE=3>b) Desktop with network backup</FONT></H2><A NAME="desktop"></A>
+<P LANG="en"><BR><BR>
+</P>
+<P LANG="en"><FONT SIZE=3>If you have a linux desktop you may want to
+have a backup of you local files on some network server. This
+solution applies to make instant backups of your files to the net.
+BUT BE AWARE! THIS IS NOT A REPLACEMENT OF A REAL BACKUP SOLUTION ANY
+CHANGE YOU MAKE TO YOUR FILES (DELETES AND UPDATES) WILL REFLECT IN
+THE NETWORK REPLICA, SO YOU STILL HAVE TO MAKE YOUR REGULAR BACKUPS!
+THIS SOLUTION IS JUST TO PROVIDE A WAY TO NOT LOOSE YOUR RECENT WORK
+WHICH IS NOT FOUND IN THE BACKUP JUST BECAUSE YOU DIDN'T MAKE YOUR
+BACKUP PROCEDURE YET!</FONT></P>
+<P LANG="en"><BR><BR>
+</P>
+<P LANG="en"><FONT SIZE=3>Make the local mount point for all the real
+and virtual filesystems in each of the users's servers:</FONT></P>
+<div class='codebox'>
+<P LANG="en"><FONT SIZE=3>mkdir /real1 /real2 /virtual</FONT></P>
+</div>
+<P LANG="en"><BR><BR>
+</P>
+<P LANG="en"><FONT SIZE=3>Update your fstab by adding these 2 lines:</FONT></P>
+<P><BR><BR>
+</P>
+<div class='codebox'>
+<P>nfs1:/data /real1 nfs auto 0 0</P>
+<P>chironfs#<span style="font-weight: bolder; font-size: 14px;">:</span>/real1=/real2 /virtual fuse
+allow_other,log=/var/log/chironfs.log 0 0</P>
+</div>
+<P><BR><BR>
+</P>
+<P LANG="en"><FONT SIZE=3>If the software you want to use with Chiron has specific instructions
+about raising the limits of opened files, or just if you know that you will have to simultaneously 
+open a high number of files, you MUST read <a href="#hash">Chapter 6. Hash, file descriptors and 
+ulimit considerations</a></FONT></P>
+<P LANG="en"><BR><BR>
+</P>
+<H2>Chapter 5. Replica Failures</H2><A NAME="fail"></A>
+<P><BR><BR>
+</P>
+<P LANG="en"><FONT SIZE=3>Anytime some of your replica fails chironfs
+attempts to make your systems running. If the fail occurs during a
+read operation, chironfs tries to read from some other replica and in
+case of success, returns to the caller with no error. In this case,
+chironfs logs the event if you mounted with the recommended –log
+option. If the fail occurs during a write operation, chironfs
+continues trying to write in the other replicas. If at least one of
+the replicas succeeds in the write, chironfs returns to the caller
+with no error. But this time, chironfs logs the event AND disable the
+failed replicas. It means that no further reads or writes will be
+made from or to it. At this point, you have to make you monitor
+policy to be reported of the event. You may use any software, like
+logwatch, for this purpose. After correcting the fail cause on the
+replica failed server, YOU MUST PROVIDE BY YOURSELF THE
+RESTABLISHMENT OF THE CONSISTENCY OF THE DATA ON THE FAILED SERVER. I
+SUGGEST THE USE OF RSYNC TO UPDATE THE DATA. <U><B>THIS STEP MUST BE
+DONE BEFORE PUTTING THE REPLICA IN ENABLED STATE AGAIN</B></U>,
+OTHERWISE YOU WILL CORRUPT YOUR DATA IN ALL OTHER REPLICAS. To
+restablish the use of the replica after the consistency recover
+procedure, you will have to umount your chironfs virtual filesystem
+and mount it again.</FONT></P>
+<P LANG="en"><BR><BR>
+</P>
+<H2>Chapter 6. Hash, file descriptors and ulimit considerations</H2><A NAME="hash"></A>
+<P><BR><BR>
+</P>
+<P>The hash table functions currently being used are the Robert Jenkins' 32 bit integer 
+hash function as found in this <a href="http://www.concentric.net/~Ttwang/tech/inthash.htm"
+>Twang's doc</a> just adapted to the C language. The 64 bit mix function was taken
+from there too.</P>
+<P>In prior version of ChironFS, the size of the hash table was equal to the file-max
+kernel parameter. It has been lowered to minimize memory usage. This was done without
+sacrificing performance due to the great distribution achieved by these hash functions.</P>
+<P>The file-max kernel parameter is system wide and if all the file-system would be
+ChironFSed and with a minimal of two replicas we would need only 33% of the old table 
+space. Since the new hash functions are much better distributed and are good enough
+until 80% of the space used, I decided to use a file-max proportional allocation,
+using the maximum power of 2 less than 50% of file-max.</p>
+<P>The <a href="#stats">stats</a> showed a low collision rate for 50% of table
+usage (about 18% of file-max in my box, which means that, using two replicas,
+I was using 54% of the system file descriptors).</P>
+<P><BR><BR>
+</P>
+<H3>Statistics</H3><A NAME="stats"></a>
+<P><BR><BR>
+</P>
+<P>
+I made a hash test program that simulates file descriptors allocations
+and counts, for each hash slot, the total colisions, directly from hash
+caculations or indirect when, due a previous colision the system tried
+to allocate the next address and found it already allocated.
+</P>
+<P>
+Each pixel of the graphics below represents one address. The whites are
+free slots, the greens are allocated but without any colision. The reds
+are addresses with just one colision and the blacks are the ones with 
+more than one colision.
+</P>
+<P>
+I tested with three tables: small, medium and large. The small is the one
+currently in use by ChironFS and is sized as the maximum power of 2 less
+than 50% of file-max. The medium is sized the double of the small table.
+The large is 4 times the medium one. The tests were done allocating 50% 
+of the small table, 25% of the medium and 6,25% of the large one.
+In my system, the file-max is 365718. So the small table is 128K 
+file descriptors, the medium is 256K and the large is 1M. The allocations
+totalized 64K file descriptors.
+</P>
+<P><br /></P>
+<P class="figure"><img src="small.gif" /><br />
+Figure 1. Small table allocations. 
+</P> 
+<P style="font-size: 16pt;"><br /></P>
+<P class="figure"><img src="med.gif" /><br />
+Figure 2. Medium table allocations. 
+</P> 
+<P style="font-size: 16pt;"><br /></P>
+<P class="figure"><img src="large.gif" /><br />
+Figure 3. Large table allocations.
+</P> 
+<P>
+So, there is an acceptable colision rate at a high level of concurrently
+opened files (64k ChironFS file descriptors, using the minimal two
+replicas, actually means 192k (53%) of the 360k file-max limit).  
+</P>
+<P>
+But the discussion doesn't ends here. After this explanation about
+the management of the file descriptors and pushing them to the limits,
+we shall consider how the system treats all that stuff.
+</P>
+<P>
+The point is that the file-max kernel parameter is the system wide limit
+to opened file descriptors. <span class="emphasize">But the system limits 
+the amount of opened files by process too! And ChironFS is also under 
+these limitations.</span> When you mount ChironFS, it will try to raise
+system parameters to the values needed. But it will succeed only if it 
+is running as root! If you run ChironFS as unprivileged user you will 
+have to raise the maximum opened files per process as root editing the
+file /etc/security/limits.conf making sure it has the lines below to,
+for example, set the maximum opened files to 65536 for user "www":
+</P>
+<div class='codebox'>
+<P>
+www             soft    nofile          65536<br />
+www             hard    nofile          65536
+</p>
+</div>
+<P>
+Note that you have to login again to make the changes valid. If you are
+in an X-terminal you have to close your X session, login again and then
+open you X-terminal.
+</p>
+<P>
+<span class="emphasize">Atention! Check the documentation of the software
+you pretend to run using ChironFS. For example, if your software documentation
+says to you that it needs 30000 open files and tells you to change the
+configuration at /etc/security/limits.conf and the user who will mount ChironFS
+is an unprivileged user (not root), you have to configure the limits of this
+user too using the formula: 2 * NF * NR + 6 (2 times number of files times number
+of replicas plus 6).</span>
+</P>
+<P>
+For example, to be able to open 30000 files replicated over 3 replicas, you have 
+to set your /etc/security/limits.conf to 180006 (2 * 30000 * 3 + 6). Then your
+/etc/security/limits.conf, for the user "someuser", for example, should be as
+this: 
+</P>
+<div class='codebox'>
+<P>
+someuser      soft    nofile          180006<br />
+someuser      hard    nofile          180006
+</p>
+</div>
+<P>
+So, that's all to make it run properly. Now if you are curious about why make all 
+this math, the reasons are:
+<ul class='stdlist' style='margin-left: 3em;'>
+<li>1) each file opened by a file in the virtual mount
+point makes ChironFS do an open in each replica, one file descriptor is consumed by 
+each one;
+</li>
+<li>2) multiply everything by 2 because ChironFS uses a hash table to store the
+file descriptors of the real filesystems and it is power of two sized and then, ChironFS
+gets the value of ulimit, sets all bits (which will, in most cases, result in a value
+higher than the ulimit) and rotate it right (divide by two) and, this way, if gets an
+ulimit of 90000, it will divide by 3, obtaining 30000, set all bits and rotate, obtaining
+16383 and your application will be limited by this number, not 30000. So, multiplying
+by two will make ChironFS end up with a result of 32767, which will guarantee that your
+application will be able to open the 30000 files;
+</li>
+<li>3) the 6 is for extra file descriptors
+reserved to be used by ChironFS like, for example, the log file.
+</li>
+</ul> 
+</P>
+<P><BR><BR>
+</P>
+<P style="font-size: 16pt;"><br /></P>
+<H2>Chapter 7. Support</H2><A NAME="support"></A>
+<P><BR><BR>
+</P>
+<P>As we are starting to publish this system, many things still have
+to be done. This software is provide AS IS and so, mail me (put
+"[CHIRONFS]" in the subject) and I will TRY to do my best to
+support you. Now there is a <a href="http://groups.google.com/group/chironfs-forum"
+>discussion list</a>, so users now have this way to solve their problems too.</P>
+<P><BR><BR>
+</P>
+<H2></H2>
+</div>
+<script src="http://www.google-analytics.com/urchin.js" type="text/javascript">
+</script>
+<script type="text/javascript">
+_uacct = "UA-2444668-2";
+urchinTracker();
+</script>
+</body>
+</html>

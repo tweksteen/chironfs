@@ -1,0 +1,27 @@
+* make a cache type replica which copies contents on demand
+* Support for extended attributes
+* automatic resync of failed replicas
+  + command line option indicating a script to make the resync
+    at mount time, valid only if there is a log file
+    - deliver scripts:
+      . rsync based script
+* Implement two optional mutual exclusive policies
+  when the replicas have different sizes:
+  + Report "partition" size/free space as the least
+    value reported by the replicas. This approach
+    prevents having a disabled replica when it gets
+    "disk full" error while the others could succeed
+  + Report "partition" size/free space as the biggest
+    value reported by the replicas. This approcah
+    prevents your systems stopping when the smaller
+    replica gets "disk full" error. So the replica 
+    disabled log message raises the alarm in a "dead
+    canary" way
+* Make more tests specially in case of failure detection.
+* /chironctl pseudo file to manage chironfs in runtime
+  file attribs define who can manage
+* make statistics
+* better load balance algorithm using the statistics to
+  choose from which replica we will try to read
+* Slow replicas slow down the entire system
+  + develop a threaded version with asynchronous rw 

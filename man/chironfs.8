@@ -1,0 +1,99 @@
+.\" Copyright (c) 2007 Luis Otavio de Colla Furquim
+.\" This file may be copied under the terms of the GPLv3 included in this package and also found at its original location http://www.gnu.org/licenses/gpl-3.0.html
+.TH "ChironFS" "8" "1.0" "Luis Otavio de Colla Furquim" "Kernel/Filesystems"
+.SH "NAME"
+ChironFS \- The Chiron Replication Filesystem version 1.0
+.SH "SYNOPSIS"
+chironfs [\-?fhlqV] [\-\-fuseoptions <fuse options>] [\-\-help]
+         [\-\-version] [\-\-log <logfilename>] [\-\-quiet]
+         [:]path=[:]path[=[:]path[=[:]path...]] mount\-point
+.SH "DESCRIPTION"
+Options: 
+  \-\-fuseoptions FUSE OPTIONS, \-f FUSE OPTIONS 
+    Here you can set Fuse specific options:
+         \-d \-o debug
+            enable debug output (implies \-f) 
+         \-f 
+            foreground operation 
+         \-s 
+            disable multi\-threaded operation 
+         \-o allow_other
+            allow access to other users 
+         \-o allow_root 
+            allow access to root 
+         \-o nonempty 
+            allow mounts over non\-empty file/dir 
+         \-o default_permissions
+            enable permission checking by kernel 
+         \-o fsname=NAME 
+            set filesystem name 
+         \-o max_read=N 
+            set maximum size of read requests 
+         \-o hard_remove 
+            immediate removal (don't hide files) 
+         \-o use_ino 
+            let filesystem set inode numbers 
+         \-o readdir_ino 
+            try to fill in d_ino in readdir 
+         \-o umask=M 
+            set file permissions (octal) 
+         \-o umask=M 
+            set file permissions (octal) 
+         \-o uid=N 
+            set file owner 
+         \-o gid=N 
+            set file group 
+         \-o entry_timeout=T 
+            cache timeout for names (1.0s) 
+         \-o negative_timeout=T 
+            cache timeout for deleted names (0.0s) 
+         \-o attr_timeout=T 
+            cache timeout for attributes (1.0s) 
+    See Fuse specific documentation for more help. 
+  \-\-help, \-h, \-? 
+    Prints the help 
+  \-\-version, \-V 
+    Prints version of the software 
+  \-\-log FILE, \-l FILE 
+    Sets a log filename. If you don't set it, no log will be 
+    done at all 
+  \-\-fsname NAME, \-n NAME 
+    Defines the filesystem label name, for viewing it in df
+    or mount 
+  \-\-quiet, \-q 
+    Do not print error messages to stderr, just set the exit
+    codes. This does not affect logging 
+
+[:]path=[:]path[=[:]path[=[:]path...]] 
+    This the "=" separated list of paths where the 
+    replicas will be stored. If a replica path is prefixed
+    with a colon, then that replica will be considered
+    slower than the others and the load balance algorithm
+    will choose it for read only if the faster replicas
+    fail.
+    
+
+mount\-point 
+    The mount\-point through which the replicas will be
+    accessed
+
+.SH "VERSION"
+This man page is correct for version 1.0 of the Chiron File System.
+.SH "DIAGNOSTICS "
+If you specify a log file using the \-l or the \-\-log command
+line option you will have critical failures reported in that
+file. There are two types of reports in this file: the
+failure report and the disable report. The failure report
+indicates the action failed, the path of the replica that
+failed and the related errno message. The disable report just
+tell us that a replica is being disabled and so it's
+inconsistent. The reintegration process of the replica have
+to be made manually in this version. We suggest you use rsync
+to do it. After the data synchronization you have to remount
+the chiron filesystem. A replica is disabled ONLY IF a write
+operation was FAILED in the disabled replica AND the same
+operation was SUCCESFULL in another replica.
+.SH "SEE ALSO "
+rsync(1),  heartbeat at http://linux\-ha.org/Heartbeat .
+.SH "AUTHOR"
+The ChironFS replication Filesystem  were  created  by  Luis Otavio de Colla Furquim.

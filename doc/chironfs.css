@@ -1,0 +1,260 @@
+BODY {
+   background:    white;
+}
+
+#shtopright {
+   position: absolute;
+   top:      100px;
+   left:     790px;
+   width:    13px;
+   height:   14px;
+   border:   none;
+   margin:   0px;
+   padding:  0px;
+   overflow: hidden;
+   background: url(shadow-topright.jpg);     
+}
+
+#shright {
+   position: absolute;
+   top:      114px;
+   left:     790px;
+   width:    13px;
+   height:   385px;
+   border:   none;
+   margin:   0px;
+   padding:  0px;
+   overflow: hidden;
+   background: url(shadow-right.jpg);     
+}
+
+#shcorner {
+   position: absolute;
+   top:      499px;
+   left:     790px;
+   width:    13px;
+   height:   13px;
+   border:   none;
+   margin:   0px;
+   padding:  0px;
+   overflow: hidden;
+   background: url(shadow-corner.jpg);     
+}
+
+#shbottom {
+   position: absolute;
+   top:      499px;
+   left:     154px;
+   width:    636px;
+   height:   13px;
+   border:   none;
+   margin:   0px;
+   padding:  0px;
+   overflow: hidden;
+   background: url(shadow-bottom.jpg);     
+}
+
+#shbottomleft {
+   position: absolute;
+   top:      499px;
+   left:     141px;
+   width:    13px;
+   height:   13px;
+   border:   none;
+   margin:   0px;
+   padding:  0px;
+   overflow: hidden;
+   background: url(shadow-bottomleft.jpg);     
+}
+
+#ws {
+   background:    lightyellow;
+   position:      absolute;
+   top:           0px;
+   left:          0px;
+   width:         100%;
+   height:        100%;
+}
+
+#hdr {
+   color:         darkslategray;
+   background:    lightyellow;
+   text-align:    center;
+   position:      absolute;
+   top:           0px;
+   left:          0px;
+   width:         800px;
+   height:        110px;
+   font-family:   arial;
+   font-weight:   bolder;
+   font-size:     20pt;
+}
+
+#logo {
+   position:   absolute;
+   top:        0px;
+   left:       0px;
+   width:      100px;
+   height:     110px;
+   background: url('chironfs.jpg');
+   z-index:    10;
+}
+
+#tit {
+   position:   absolute;
+   left:       300px;
+}
+
+#tit1 {
+   font-size:  50px;
+   position:   absolute;
+   z-index:    10;
+}
+
+#tit2 {
+   font-size:  50px;
+   color:      grey;
+   position:   absolute;
+   top:        2px;
+   left:       3px;
+}
+
+#subtit {
+   position:   absolute;
+   top:        55px;
+   left:       150px;
+   z-index:    10;
+}
+
+#lnk {
+   color:         darkslategray;
+   background:    lightyellow;
+   text-align:    center;
+   position:      absolute;
+   top:           110px;
+   left:          0px;
+   width:         140px;
+   height:        400px;
+   padding:       0px;
+   margin:        0px;
+   font-family:   arial;
+   font-weight:   bolder;
+   font-size:     12px;
+   overflow:      hidden;
+}
+
+A {
+   text-decoration: none;
+   color:           darkseagreen;
+}
+
+
+A:hover {
+   background: whitesmoke;
+   color:      darkseagreen;
+}
+
+
+#content {
+   position: absolute;
+   top:           100px;
+   left:          141px;
+   border:        0px;
+   width:         649px;
+   height:        399px;
+   padding:       0px;
+   margin:        0px;
+   border:        solid 1px darkslategray;
+   z-Index:       100;
+}
+
+.smalltit {
+   text-align:  center;
+   text-indent: 0em;
+   font-size:   25px;
+}
+
+.stdtext {
+   color:         darkslategray;
+   font-family:   arial;
+   font-size:     12px;
+   text-align:    justify;
+   text-indent:   5em;
+}
+
+.stdlist {
+   color:         darkslategray;
+   font-family:   arial;
+   font-size:     12px;
+   text-align:    justify;
+   text-indent:   0em;
+}
+
+
+.figure {
+   text-align:  center;
+   font-size:   9px;
+   font-family: arial;
+}
+
+
+
+#m {
+   text-align:   center;
+   text-indent: 0em;
+}
+
+.cnt {
+   text-align:   center;
+}
+
+.startnewsection {
+   border-top: 1px solid darkseagreen;
+}
+
+.btop {
+   border-top: 1px inset darkseagreen;
+}
+
+.bbot {
+   border-bottom: 1px inset darkseagreen;
+}
+
+.uline {
+   text-decoration: underline;
+}
+
+.codebox {
+   font-size:      12px;
+   font-family:    arial;
+   border:         1px dashed darkseagreen;
+   background:     honeydew;
+   text-indent:    0em;
+   margin-left:    4em;
+   margin-right:   2em;
+   padding-left:   1em;
+}
+
+.newstit {
+   font-size:      16px;
+   font-family:    arial;
+   font-weight:    bolder;
+}
+
+.citation {
+   font-style:   italic;
+   margin-left:  3em;
+   margin-right: 7em;
+}
+
+.bigger {
+   font-size:   18px;
+}
+
+.noindent {
+   text-indent: 0em;
+}
+
+.emphasize {
+   font-variant:   small-caps;
+}

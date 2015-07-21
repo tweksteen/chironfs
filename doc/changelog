@@ -1,0 +1,233 @@
+                   =================================
+                   Release Notes for ChironFS 1.0.0
+                             April 5, 2008
+                   =================================
+
+This is the first stable release of the Chiron FS code 
+base. There is one known bug right now. It is the bug related
+with massive delete described below. There is a fix for it,
+but it is still in experimental status. Until now, no one has
+reported failures related to this bug. If you find any bugs, 
+please report them asap, with as many details as you can: 
+what you were doing, what you have installed in the system, 
+the command line you invoked ChironFS, your current directory,
+etc.
+
+No bug fixes included in ChironFS 1.0.0.
+
+
+######################################################################
+Changes
+#######
+
+Changes since ChironFS 1.0RC9
+---------------------
+
+  o The version naming convention: now ChironFS will use a Linux Kernel like
+    versioning scheme. So, the upcoming version 1.1.x will be the development
+    version of the upcoming 1.2.x stable one.
+  o Changed the debug code on *BSD versions to get the same system information
+    that Linux version gets. It is needed because the next ChironFS release
+    will need that info in order to resynchronize failed replicas.
+  o Integrated patch sent by Yen-Ming Lee, porting ChironFS to FreeBSD.
+  o Integrated patch sent by Antti Kantee, porting ChironFS to NetBSD.
+
+
+Changes since ChironFS 1.0RC8
+---------------------
+
+  o Fixed bug #8 reported at http://code.google.com/p/chironfs/issues/detail?id=8
+    where an unprivileged user was being able to touch a file which it did not have
+    the rights to write. Thanks to Neal Becker for reporting it.
+  o Fixed a readlink bug, where the number of bytes of the linked filename was being
+    wrong reported.
+  o Fixed function access, the access were not being checked against the ruid and rgid
+    of the caller process, but of the mounting user.
+  o Fixed a memory leak bug.
+
+
+Changes since ChironFS 1.0RC7
+---------------------
+
+  o Fixed a bug reported by email by Patrick Chevalier, where ChironFS
+    was giving wrong error message when the mount point path did not 
+    existed. Thanks to him for the report.
+  o Fixed issue #7 reported at http://code.google.com/p/chironfs/issues/detail?id=7
+    where ChironFS wasn't being specific in the error message. Thanks to
+    Alexandre Fernandes for reporting it.
+  o Fixed a bug reported by email by Graham Toal where the hash address of 
+    the file descriptor table could be a negative number. The hash table
+    function was changed to the Robert Jenkins' 32 bit integer hash function
+    as found in the Twang's doc at http://www.concentric.net/~Ttwang/tech/inthash.htm
+    just adapted to the C language. The 64 bit mix function was taken from
+    there too. The size of the hash table was changed too it was a waste of memory
+    allocating a table of file-max size because file-max is a system wide parameter
+    and if all the file-system would be ChironFSed and with a minimal of two replicas
+    we would need only 33% of the table space. Since the new hash functions are much
+    better distributed and are good enough until 80% of the space used, then I
+    decided to use a file-max proportional allocation, using the maximum power of 2
+    less than 50% of file-max. The stats showed a low collision rate for 50% of table
+    usage (about 18% of file-max in my box, which means that, using two replicas,
+    I was using 54% of the system file descriptors). I drew an allocation graphic
+    which can be seen in the howto at http://www.furquim.org/chironfs/howto.html#stats
+  o Fixed a bug where a chunk of memory was being freed two times (and crashing
+    ChironFS, but it was going exit anyway) when some replica path didn't existed
+    at mount time.
+  o Fixed an issue when the ulimit were lower than the projected hash table size, just
+    raising the ulimit value, but it only works if the mounting user is root, otherwise
+    the ulimit must be raised through manual configuration of /etc/security/limits.conf.
+  o Updated the howto with hash, file descriptor and ulimit considerations; packages
+    other than the tarball installations and how to lower the read priority of known
+    slower replicas.
+
+Changes since ChironFS 1.0RC6
+---------------------
+
+  o Fixed bug #6 reported at http://code.google.com/p/chironfs/issues/detail?id=6 
+    where files created by another user than the user
+    that mounted ChironFS were owned by the mounting user and not
+    the creator itself. It was a serious security problem. ChironFS
+    was not tracking the creation of the files and, this way, was
+    not changing the ownership of the created file/directory to the
+    uid and gid of the calling process. Now ChironFS calls fuse_context
+    to get that info from the calling process and changes to it 
+    right after the creation. Thanks to Neal Becker who reported
+    the bug.
+  o Implemented an experimental fix for a bug reported by Oleg Bartunov
+    by e-mail, where ChironFS fails to exclude all files when doing
+    massive delete ("rm -Rf" on directories with thousands of files).
+    It happens when a cycle of opendir/readdir/closedir cannot be done
+    in only one call due to lack of space in the readdir buffer and 
+    subsequent calls were lacking of synchronization because the system
+    flushed the deletes and updated the directory list. I started to 
+    call seekdir using the offset parameter of the readdir. This
+    parameter were being ignored until now as in the example programs
+    of fuse implementations. Now my tests are succesfull. But, Franco
+    Broi reported at the fuse-devel mailing list that a filesystem he
+    is implementing got the same bug. I told him about my fix and he 
+    tested with his filesystem and it did NOT work for him. Miklos 
+    Szeredi, the author of fuse proposed another fix and it worked for
+    Franco Broi. But when I implemented it in ChironFS, it made my
+    system crash. Franco Broi told me that his filesystem runs on top
+    of NFS. I did not tested ChironFS over NFS, but my fix worked on
+    top of SSHFS. So, I will keep my fix, but in experimental status.
+    Thanks to Oleg Bartunov for reporting the bug.
+  o Complete rewrite of the debug function. The old ones were a confusing
+    mess. Now there is only one, accepting variable parameters. Thanks
+    to Graham Toal, author of dupfs, from whose code I learnt the
+    techniques to do it.
+  o Fixed a bug when ChironFS is called with --log option and the
+    logfile pathname is relative and the file itself doesn't exists.
+    In this case, ChironFS was exiting with the "file not found" error.
+    The problem is that when realpath is called with a non-existant
+    path it returns NULL. So I had to get its basedir, call realpath
+    and only then, re-append the basename to it. Thanks to Graham Toal
+    who reported this bug.
+  o Implemented a priorization system, modifying the simple round-robin
+    that made the load balance on read operations. Now when we have
+    replicas with a too different response time (tipically a local/LAN
+    replica and a remote WAN replica) the system focus the load balance
+    only in the fast replicas. The slow replicas are accessed in read
+    operations only when the fast ones fails. To enable this, the user
+    MUST tell ChironFS which are the slower replicas by prefixing the
+    pathnames with a colon in the command line, for example:
+    "chironfs /real1=:/real2=/real3=/real4=:/real5 /virtual". In this
+    example, ChironFS will give priority to the /real1, /real3 and /real4
+    and choosing a replica to read using a round-robin load balance
+    algorithm. ChironFS will read from /real2 and /real5 replicas only
+    if /real1, /real3 and /real4 fail and in this case, will choose
+    between /real2 and /real5 unsing the same round-robin algorithm.
+    Of course most of its usage will be something like
+    "chironfs /real1=:/real2 /virtual", but the example was intended to
+    show more details on how ChironFS will handle these situations.
+    Thanks to Maxime Ritter who gave the idea of configuring the priority
+    in the command line.
+  o Fixed one more memory leak: I was freeing all paths[i].path allocations,
+    but I forgot to free the paths structure itself.
+
+
+Changes since ChironFS 1.0RC5
+---------------------
+
+  o Fixed a bug with fsync reported both by Oleg Bartunov by e-mail
+    "(...) postgresql 8.2.4 doesn't works. initdb worked fine, but 
+    starting fails (...) PANIC:  could not fsync control file: No 
+    such file or directory (...)" and by William Maddler "(...) I
+    try to save a file from Vim. (...) 'test' E667: Fsync failed
+    (...) File seems to be saved anyhow. I have no problems using
+    nano or echoing to a file.". It was a wrong return value of the
+    function giving to the application a false negative.
+  o Fixed bug #5 reported at http://code.google.com/p/chironfs/issues/detail?id=5
+    The man page wasn't being copied to the man directory when 
+    installing from the source tarball. I needed to redo all the
+    autoconf/automake/autoheader stuff just to discover that I had
+    to put one line at Makefile.am. Anyway, I needed to change the
+    .spec file and my script to build all the packages too. Thanks
+    to Alexandre Fernandes who reported the bug.
+
+
+Changes since ChironFS 1.0RC4
+---------------------
+
+  o Fixed bug #3 reported at http://code.google.com/p/chironfs/issues/detail?id=3
+    it was a problem with mknod, which can't be called when using sshfs. Instead
+    we open and close the file. Thanks to Alexandre Fernandes for reporting this
+    bug.
+  o Fixed bug #4 reported at http://code.google.com/p/chironfs/issues/detail?id=4
+    there was a mismatch in readdir function when testing if the replica is 
+    disabled. I used the wrong index variable. Thanks to Alexandre Fernandes for
+    reporting this bug.
+  o Added lock control and reopening of the log file, so when you logrotate
+    there will be no need to restart (remount) ChironFS, and, this way, no
+    need to stop all the daemons that uses the ChironFS mounts.
+  o ChironFS now automatically calls FUSE using the direct_io option so we avoid
+    redundant disk caching
+  o Fixed wrong error message when a failure occurs calling realpath to canonicalize
+    the replica's paths. I was just reporting low memory and so this message was
+    being displayed when the path was wrong. Now I display the errno message
+  o Added --version and -V option to command line.
+
+Changes since ChironFS 1.0RC3
+---------------------
+
+  o Bug #2 reported at http://code.google.com/p/chironfs/issues/detail?id=2 .
+    Thanks to Marek Kotas for reporting this bug.
+
+Changes since ChironFS 1.0RC2
+---------------------
+
+  o Fixing various memory leaks. Thanks to Patrick Prasse who found these
+    bugs and sent a patch fixing all of them.
+
+  o Fixing bug #1 reported at the project issues page. Look at
+    http://code.google.com/p/chironfs/issues/detail?id=1 to see the
+    details. Thanks to Marcelo Squeff who found this bug.
+
+
+Changes since ChironFS 1.0RC1
+---------------------
+
+  o Correcting file permissions at the creation of the log file. It
+    was world writable. Thanks to Jason Haar who found this bug.
+
+Changes since ChironFS 0.5
+---------------------
+
+o   Luis Otavio de Colla Furquim (luisfurquim@gmail.com)
+    * Adoption of a struct to handle all the data about the replicas.
+      Version 0.5 just used strings to store the pathname to them. Now
+      the system have a status field indicating if it is enabled or 
+      disabled and the time when it was disabled. The fields with usage
+      statistics were been defined but they are not used yet.
+    * Some write functions were behaving as read functions: they were
+      not writing to all replicas, but to the first available one.
+    * Implemented a simple round robin algorithm to load balance the
+      read operations. Version 0.5 was reading everything from the
+      first replica available.
+    * Implemented a logging system. This system does not logs all the
+      activity. It logs just when some operation fails but some are
+      succesfull. In this case if the operation is a reading operation
+      Chiron FS logs but does not disable the replica because the replicas
+      are still consistent. But if the operation is for write, then
+      Chiron FS logs the failure AND disable the inconsistent replica.
+
