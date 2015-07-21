@@ -5,6 +5,23 @@ AC_PREREQ(2.61)
 AC_INIT([chironfs], [1.1.1], [luisfurquim@gmail.com])
 AC_CONFIG_SRCDIR([src/chironoper.h])
 AC_CONFIG_HEADER([config.h])
+AC_CANONICAL_TARGET
+case $host in
+     *-*-freebsd*)
+       os_type=freebsd
+        ;;
+     *-*-pcbsd*)
+       os_type=freebsd
+        ;;
+     *-*-netbsd*)
+       os_type=netbsd
+        ;;
+    *)
+       os_type=other
+        ;;
+esac
+AM_CONDITIONAL(FREEBSD,test "x$os_type" = "xfreebsd")
+AM_CONDITIONAL(NETBSD,test "x$os_type" = "xnetbsd")
 AM_INIT_AUTOMAKE
 
 # Checks for programs.
@@ -48,23 +65,6 @@ AC_FUNC_VPRINTF
 AC_CHECK_FUNCS([dup2 getcwd getmntent getmntinfo lchown localtime_r memset mkdir mkfifo realpath rmdir strdup strerror strrchr utime])
 
 AC_CONFIG_FILES([Makefile] [src/Makefile] [doc/Makefile] [man/Makefile])
-AC_CANONICAL_TARGET
-case $host in
-     *-*-freebsd*)
-       os_type=freebsd
-        ;;
-     *-*-pcbsd*)
-       os_type=freebsd
-        ;;
-     *-*-netbsd*)
-       os_type=netbsd
-        ;;
-    *)
-        os_type=other
-        ;;
-esac
-AM_CONDITIONAL(FREEBSD,test "x$os_type" = "xfreebsd")
-AM_CONDITIONAL(NETBSD,test "x$os_type" = "xnetbsd")
 AC_DEFINE(PACKAGE, [chironfs], [Package Name])
 AC_DEFINE(VERSION, [1.1.1], [Package Version])
 AC_OUTPUT
