@@ -410,27 +410,66 @@ ulimit considerations</a></FONT></P>
 <P><BR><BR>
 </P>
 <P LANG="en"><FONT SIZE=3>Anytime some of your replica fails chironfs
-attempts to make your systems running. If the fail occurs during a
+attempts to keep your systems running. If the fail occurs during a
 read operation, chironfs tries to read from some other replica and in
 case of success, returns to the caller with no error. In this case,
-chironfs logs the event if you mounted with the recommended –log
+chironfs logs the event if you mounted with the recommended --log
 option. If the fail occurs during a write operation, chironfs
 continues trying to write in the other replicas. If at least one of
 the replicas succeeds in the write, chironfs returns to the caller
 with no error. But this time, chironfs logs the event AND disable the
 failed replicas. It means that no further reads or writes will be
-made from or to it. At this point, you have to make you monitor
+made from or to it.</FONT></P><BR><BR>
+<P LANG="en"><FONT SIZE=3>At this point, you have to make your monitor
 policy to be reported of the event. You may use any software, like
-logwatch, for this purpose. After correcting the fail cause on the
-replica failed server, YOU MUST PROVIDE BY YOURSELF THE
-RESTABLISHMENT OF THE CONSISTENCY OF THE DATA ON THE FAILED SERVER. I
-SUGGEST THE USE OF RSYNC TO UPDATE THE DATA. <U><B>THIS STEP MUST BE
-DONE BEFORE PUTTING THE REPLICA IN ENABLED STATE AGAIN</B></U>,
+logwatch, for this purpose. Starting with version 1.1, ChironFS offers
+another way to control your filesystem health. Now you have the option
+of mounting a proc-like control filesystem using the --ctl &lt;PATH&gt;
+(or -c &lt;PATH&gt;) command line option. The control filesystem is 
+composed of one directory for each replica. Their names are the complete
+replica path with the slashes changed to underscores. Each one of them
+contain two files: the first is named "status" and contains a number "0"
+for replicas in good state or a number "2" if the replica is disabled 
+and the data is inconsistent. By echoing "0" or "2" in this file you 
+enable or disable the replica. The second file, named "check_chironfs.sh",
+is a script intended to run as a nagios plugin. If you want to use it, do
+not copy it to another path, because its contents change dynamically and
+it will not work in another path. So, suppose your fstab is something
+like:</FONT></P>
+<P><BR><BR>
+</P>
+<div class='codebox'>
+<P>nfs1:/data /real1 nfs auto 0 0</P>
+<P>chironfs#<span style="font-weight: bolder; font-size: 14px;">:</span>/real1=/real2 /virtual fuse
+allow_other,log=/var/log/chironfs.log,ctl=/var/run/chironctl 0 0</P>
+</div>
+<P><BR><BR>
+</P>
+<P LANG="en"><FONT SIZE=3>If you want to monitor your replicas with
+nagios, just tell nagios to run the scripts located at
+"/var/run/chironctl/_real1/check_chironfs.sh" and
+"/var/run/chironctl/_real2/check_chironfs.sh".</FONT></P>
+<P><BR><BR>
+</P>
+<P LANG="en"><FONT SIZE=3>You cannot change ownership or permission bits
+on any of the files/directories in this filesystem. To configure who
+can access it, change the ownership of its mount point BEFORE mounting
+it. ChironFS will use this ownership to all files and directories under
+it.</FONT></P><BR><BR>
+<P LANG="en"><FONT SIZE=3>So, after detecting the failure, correct the
+cause of the failure on the replica failed server. YOU MUST PROVIDE BY
+YOURSELF THE RESTABLISHMENT OF THE CONSISTENCY OF THE DATA ON THE FAILED
+SERVER. I SUGGEST THE USE OF RSYNC TO UPDATE THE DATA. <U><B>THIS STEP
+MUST BE DONE BEFORE PUTTING THE REPLICA IN ENABLED STATE AGAIN</B></U>,
 OTHERWISE YOU WILL CORRUPT YOUR DATA IN ALL OTHER REPLICAS. To
 restablish the use of the replica after the consistency recover
-procedure, you will have to umount your chironfs virtual filesystem
-and mount it again.</FONT></P>
-<P LANG="en"><BR><BR>
+procedure, supposing your fstab is the same as above and the failed (and
+disabled) replica is /real2, use the control filesystem to enable it again
+as below:</FONT></P><BR><BR>
+<div class='codebox'>
+<P>echo 0 &gt; /var/run/chironctl/_real2/status</P>
+</div>
+<P><BR><BR>
 </P>
 <H2>Chapter 6. Hash, file descriptors and ulimit considerations</H2><A NAME="hash"></A>
 <P><BR><BR>

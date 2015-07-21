@@ -62,21 +62,11 @@
 // End of Yen-Ming Lee patch
 //
 
+#include "chiron-types.h"
+#include "chirondbg.h"
 #include "chironfs.h"
+#include "chironfn.h"
 
-/* -------------------- */
-#define min(a,b) ((a<b)?a:b)
-
-
-#ifdef _DBG_
-
-#define dbg(fmt) debug fmt
-
-#else
-
-#define dbg(fmt)
-
-#endif
 
 void print_paths()
 {
@@ -206,23 +196,6 @@ void opt_parse(char *fo, char**logname, char**argvbuf)
       i++;
                                                                            dbg(("\n%s",fo));
    } while (i<=len);
-}
-
-void attach_log(void)
-{
-   mode_t tmpmask;
-   
-   if (logfd) {
-      fclose(logfd);
-   }
-   tmpmask = umask(0133);
-   logfd = fopen(logname,"a");
-   umask(tmpmask);
-   if (logfd==NULL) {
-      print_err(CHIRONFS_ERR_BAD_LOG_FILE,logname);
-      exit(CHIRONFS_ERR_BAD_LOG_FILE);
-   }
-   setlinebuf(logfd);
 }
 
 int **mk_round_robin(int *tmp_list,int dim)
@@ -430,7 +403,16 @@ int do_mount(char *filesystems, char *mountpoint)
          print_err(errno,filesystems+start);
          exit(errno);
       }
+      // just to store it and avoid future recalculations
+      paths[i].pathlen = strlen(paths[i].path);
       start += strlen(filesystems+start) + 1;
+      if (paths[i].priority) {
+         call_log("replica priority low",paths[i].path,0);
+                                             dbg(("\nreplica low: %s",paths[i].path));
+      } else {
+         call_log("replica priority high",paths[i].path,0);
+                                             dbg(("\nreplica high: %s",paths[i].path));
+      }
    }
 
    if (rep_on_mount) {
@@ -469,34 +451,4 @@ int do_mount(char *filesystems, char *mountpoint)
    return(0);
 }
 
-char *xlate(const char *fname, char *rpath)
-{
-   char *rname;
-   int   rlen, flen;
-
-   if ((rpath==NULL)||(fname==NULL)) {
-      return(NULL);
-   }
-   if (!strcmp(rpath,".")) {
-      flen = strlen(fname);
-      rname = malloc(1+flen);
-      if (rname!=NULL) {
-         if (!strcmp(fname,"/")) {
-            strcpy(rname,currdir);
-         } else {
-            strcpy(rname,fname+1);
-         }
-      }
-   } else {
-      rlen = strlen(rpath);
-      flen = strlen(fname);
-      rname = malloc(1+rlen+flen);
-      if (rname!=NULL) {
-         strcpy(rname,rpath);
-         strcpy(rname+rlen,fname);
-      }
-   }
-                                                dbg(("\nxlate:%s",rname));
-   return(rname);
-}
 

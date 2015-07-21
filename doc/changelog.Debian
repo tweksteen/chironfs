@@ -1,7 +1,7 @@
-chironfs (1.0.0) debian; urgency=low
+chironfs (1.1.0) debian; urgency=low
 
        * Initial packaging
-         lintian is bothering me with the copyright-should-refer-to-common-license-file-for-gpl
+         lintian still bothers me with the copyright-should-refer-to-common-license-file-for-gpl
          error. But, this package is licensed with GPLv3 which does not exist in my 
          /usr/share/common-licenses directory so both I do not have anything to reference
          there and I must keep this license file in the package doc directory. 

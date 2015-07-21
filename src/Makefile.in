@@ -30,7 +30,10 @@ POST_INSTALL = :
 NORMAL_UNINSTALL = :
 PRE_UNINSTALL = :
 POST_UNINSTALL = :
-bin_PROGRAMS = chironfs$(EXEEXT)
+build_triplet = @build@
+host_triplet = @host@
+target_triplet = @target@
+bin_PROGRAMS = chironfs$(EXEEXT) chirctl$(EXEEXT)
 subdir = src
 DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
@@ -43,7 +46,14 @@ CONFIG_CLEAN_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)"
 binPROGRAMS_INSTALL = $(INSTALL_PROGRAM)
 PROGRAMS = $(bin_PROGRAMS)
-am_chironfs_OBJECTS = chironfs.$(OBJEXT) chiron-conf.$(OBJEXT)
+am_chirctl_OBJECTS = chirctl.$(OBJEXT) chirondbg.$(OBJEXT) \
+	chironfn.$(OBJEXT)
+chirctl_OBJECTS = $(am_chirctl_OBJECTS)
+chirctl_LDADD = $(LDADD)
+chirctl_LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(chirctl_LDFLAGS) \
+	$(LDFLAGS) -o $@
+am_chironfs_OBJECTS = chironfs.$(OBJEXT) chiron-conf.$(OBJEXT) \
+	chirondbg.$(OBJEXT) chironfn.$(OBJEXT)
 chironfs_OBJECTS = $(am_chironfs_OBJECTS)
 chironfs_LDADD = $(LDADD)
 chironfs_LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(chironfs_LDFLAGS) \
@@ -55,8 +65,8 @@ COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
 	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
 CCLD = $(CC)
 LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
-SOURCES = $(chironfs_SOURCES)
-DIST_SOURCES = $(chironfs_SOURCES)
+SOURCES = $(chirctl_SOURCES) $(chironfs_SOURCES)
+DIST_SOURCES = $(chirctl_SOURCES) $(chironfs_SOURCES)
 ETAGS = etags
 CTAGS = ctags
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
@@ -114,14 +124,22 @@ am__quote = @am__quote@
 am__tar = @am__tar@
 am__untar = @am__untar@
 bindir = @bindir@
+build = @build@
 build_alias = @build_alias@
+build_cpu = @build_cpu@
+build_os = @build_os@
+build_vendor = @build_vendor@
 builddir = @builddir@
 datadir = @datadir@
 datarootdir = @datarootdir@
 docdir = @docdir@
 dvidir = @dvidir@
 exec_prefix = @exec_prefix@
+host = @host@
 host_alias = @host_alias@
+host_cpu = @host_cpu@
+host_os = @host_os@
+host_vendor = @host_vendor@
 htmldir = @htmldir@
 includedir = @includedir@
 infodir = @infodir@
@@ -141,15 +159,23 @@ sbindir = @sbindir@
 sharedstatedir = @sharedstatedir@
 srcdir = @srcdir@
 sysconfdir = @sysconfdir@
+target = @target@
 target_alias = @target_alias@
+target_cpu = @target_cpu@
+target_os = @target_os@
+target_vendor = @target_vendor@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-AM_CFLAGS = $(all_includes) -Wall -W -Wmissing-prototypes -g -O2 -DFUSE_USE_VERSION=25 -D_FILE_OFFSET_BITS=64
-chironfs_SOURCES = chironfs.c chiron-conf.c chironfs.h
-@FREEBSD_FALSE@FREEBSDLD = 
-@FREEBSD_TRUE@FREEBSDLD = -pthread -liconv 
-chironfs_LDFLAGS = -lfuse -lm ${FREEBSDLD}
-chironfs_OBJS = chironfs.o chiron-conf.o
+AM_CFLAGS = $(all_includes) -Wall -W -Wmissing-prototypes -g -O2 -DFUSE_USE_VERSION=25 -D_FILE_OFFSET_BITS=64 -I/usr/local/include
+chironfs_SOURCES = chironfs.c chiron-conf.c chirondbg.c chironfs.h chiron-types.h chironfn.c chironfn.h chironoper.h
+chirctl_SOURCES = chirctl.c chirondbg.c chirctl.h chironfs.h chiron-types.h chironfn.c chironfn.h
+@FREEBSD_FALSE@@NETBSD_FALSE@OSLD = -lfuse
+@FREEBSD_FALSE@@NETBSD_TRUE@OSLD = -lrefuse
+@FREEBSD_TRUE@OSLD = -pthread -liconv -lfuse -L/usr/local/lib
+chironfs_LDFLAGS = -lm ${OSLD}
+chironfs_OBJSS = chironfs.o chiron-conf.o chirondbg.o chironfn.o
+chirctl_LDFLAGS = -lm ${OSLD}
+chirctl_OBJSS = chirctl.o chirondbg.o chironfn.o
 all: all-am
 
 .SUFFIXES:
@@ -206,6 +232,9 @@ uninstall-binPROGRAMS:
 
 clean-binPROGRAMS:
 	-test -z "$(bin_PROGRAMS)" || rm -f $(bin_PROGRAMS)
+chirctl$(EXEEXT): $(chirctl_OBJECTS) $(chirctl_DEPENDENCIES) 
+	@rm -f chirctl$(EXEEXT)
+	$(chirctl_LINK) $(chirctl_OBJECTS) $(chirctl_LDADD) $(LIBS)
 chironfs$(EXEEXT): $(chironfs_OBJECTS) $(chironfs_DEPENDENCIES) 
 	@rm -f chironfs$(EXEEXT)
 	$(chironfs_LINK) $(chironfs_OBJECTS) $(chironfs_LDADD) $(LIBS)
@@ -216,7 +245,10 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/chirctl.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/chiron-conf.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/chirondbg.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/chironfn.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/chironfs.Po@am__quote@
 
 .c.o:

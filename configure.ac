@@ -2,9 +2,9 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.61)
-AC_INIT(chironfs.c, 1.0.0, luisfurquim@gmail.com)
-AM_INIT_AUTOMAKE(chironfs, 1.0.0)
-AC_CONFIG_SRCDIR([src/chironfs.h])
+AC_INIT(chironfs.c, 1.1.1, luisfurquim@gmail.com)
+AM_INIT_AUTOMAKE(chironfs, 1.1.1)
+AC_CONFIG_SRCDIR([src/chironoper.h])
 AC_CONFIG_HEADER([config.h])
 
 # Checks for programs.
@@ -22,9 +22,12 @@ AC_C_CONST
 AC_TYPE_UID_T
 AC_TYPE_MODE_T
 AC_TYPE_OFF_T
+AC_TYPE_PID_T
 AC_C_RESTRICT
 AC_TYPE_SIZE_T
 AC_TYPE_SSIZE_T
+AC_CHECK_MEMBERS([struct stat.st_blksize])
+AC_STRUCT_ST_BLOCKS
 AC_HEADER_TIME
 AC_STRUCT_TM
 AC_TYPE_UINT32_T
@@ -32,6 +35,7 @@ AC_TYPE_UINT64_T
 
 # Checks for library functions.
 AC_FUNC_CLOSEDIR_VOID
+AC_FUNC_FORK
 AC_FUNC_GETMNTENT
 AC_FUNC_LSTAT
 AC_FUNC_LSTAT_FOLLOWS_SLASHED_SYMLINK
@@ -40,16 +44,26 @@ AC_FUNC_STAT
 AC_FUNC_STRFTIME
 AC_FUNC_UTIME_NULL
 AC_FUNC_VPRINTF
-AC_CHECK_FUNCS([getcwd getmntent getmntinfo lchown memset mkdir mkfifo realpath rmdir strdup strerror strrchr utime])
+AC_CHECK_FUNCS([dup2 getcwd getmntent getmntinfo lchown localtime_r memset mkdir mkfifo realpath rmdir strdup strerror strrchr utime])
 
 AC_CONFIG_FILES([Makefile] [src/Makefile] [doc/Makefile] [man/Makefile])
-case ${target} in
+AC_CANONICAL_TARGET
+case $host in
      *-*-freebsd*)
        os_type=freebsd
+        ;;
+     *-*-pcbsd*)
+       os_type=freebsd
+        ;;
+     *-*-netbsd*)
+       os_type=netbsd
         ;;
     *)
         os_type=other
         ;;
 esac
-AM_CONDITIONAL(FREEBSD, test x$os_type = xfreebsd)
+AM_CONDITIONAL(FREEBSD,test "x$os_type" = "xfreebsd")
+AM_CONDITIONAL(NETBSD,test "x$os_type" = "xnetbsd")
+AC_DEFINE(PACKAGE, [chironfs], [Package Name])
+AC_DEFINE(VERSION, [1.1.1], [Package Version])
 AC_OUTPUT

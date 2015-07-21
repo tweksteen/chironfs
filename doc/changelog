@@ -1,9 +1,9 @@
                    =================================
-                   Release Notes for ChironFS 1.0.0
-                             April 5, 2008
+                   Release Notes for ChironFS 1.1.1
+                             June 21, 2008
                    =================================
 
-This is the first stable release of the Chiron FS code 
+This is the second beta release of the Chiron FS 1.1 code 
 base. There is one known bug right now. It is the bug related
 with massive delete described below. There is a fix for it,
 but it is still in experimental status. Until now, no one has
@@ -13,12 +13,35 @@ what you were doing, what you have installed in the system,
 the command line you invoked ChironFS, your current directory,
 etc.
 
-No bug fixes included in ChironFS 1.0.0.
+Bugs fixed since ChironFS 1.1.0:
 
+  o ChironFS could not locate the correct place where chirctl was
+    when called using the environment variable $PATH to find it.
+    Now chirctl is called in the same way as ChironFS, leaving
+    this work to $PATH searches.
 
 ######################################################################
 Changes
 #######
+
+Changes since ChironFS 1.1.0
+---------------------
+
+  o ChironFS could not locate the correct place where chirctl was
+    when called using the environment variable $PATH to find it.
+    Now chirctl is called in the same way as ChironFS, leaving
+    this work to $PATH searches.
+
+
+Changes since ChironFS 1.0.0
+---------------------
+
+  o Added the --ctl (or -c) option which allows to mount a pseudo-filesystem
+    (like /proc) to control the behavior of the Chiron filesystem being mounted.
+    Currently, it's only possible to show the status of the replicas and change
+    their status. Dynamically generated nagios plugin scripts are provided too.
+  o Updated the howto in the chapter 5, explaining the use of the --ctl option.
+
 
 Changes since ChironFS 1.0RC9
 ---------------------

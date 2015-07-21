@@ -18,18 +18,6 @@
 
 #include <getopt.h>
 
-typedef struct {
-   char   *path;
-   long    totrd, totwr;
-   struct  {
-      int    old_rd_avg, curr_rd_avg, curr_rd, old_wr_avg, curr_wr_avg, curr_wr;
-      time_t upd;
-   } min1, min5, min15, min30, hour1, hour12, day, week, month, year;
-   size_t  pathlen;
-   time_t  disabled;
-   int     priority;
-} path_t;
-
 
 #if defined(_CHIRON_H_)
 /* Defines the max filesystem replication */
@@ -45,13 +33,10 @@ int    **round_robin_high   = NULL;
 int    **round_robin_low    = NULL;
 int    **round_robin_cache  = NULL;
 path_t  *paths              = NULL;
-FILE    *logfd              = NULL;
-int      quiet_mode         = 0;
 char    *mount_point        = NULL;
-char    *logname            = NULL;
-char    *currdir            = ".";
 uint64_t qt_hash_bits       = 0;
 uint64_t hash_mask          = 0;
+char *chironctl_mountpoint  = NULL;
 #else
 extern int      max_replica;
 extern int      curr_replica;
@@ -65,29 +50,12 @@ extern int    **round_robin_high;
 extern int    **round_robin_low;
 extern int    **round_robin_cache;
 extern path_t  *paths;
-extern FILE    *logfd;
-extern int      quiet_mode;
 extern char    *mount_point;
-extern char    *logname;
-extern char    *currdir;
 extern uint64_t   qt_hash_bits;
 extern uint64_t   hash_mask;
+extern char *chironctl_mountpoint;
+
 #endif
-
-/* 
- * When a file is accessed, the chiron system transparently mirrors that
- * access to its replicas in other filesystems. Since the clients works 
- * with just one file descriptor, we have to store the replicas
- * file descriptors in the table below.
- */
-
-// Structure of the file descriptor replica table
-typedef struct FD {
-   int **fd;
-   int  used;
-} fd_t;
-
-
 
 // Error codes
 #define CHIRONFS_ERR_LOW_MEMORY        -1
@@ -96,6 +64,7 @@ typedef struct FD {
 #define CHIRONFS_ERR_TOO_MANY_FOPENS   -4
 #define CHIRONFS_ERR_BAD_LOG_FILE      -5
 #define CHIRONFS_INVALID_PATH_MAX      -6
+#define CHIRONFS_ADM_FORCED            -7
 
 
 // 
@@ -119,18 +88,20 @@ typedef struct FD {
 //
 
 
+#ifdef  __linux__
+# define S_IREAD  S_IRUSR
+# define S_IWRITE S_IWUSR
+# define S_IEXEC  S_IXUSR
+#endif
+
+
+/*
+#define chironctl_mountpoint        "/.chironctl"
+#define strlen_chironctl_mountpoint 11
+*/
 
 
 #if defined(_CHIRON_H_)
-
-char *errtab[] = {
-   "Low memory",
-   "Log file must be outside of the mount point",
-   "",
-   "Too many opened files",
-   "Cannot open the log file",
-   "Invalid PATH_MAX definition, check your include files and recompile"
-};
 
 // The tables
 // file descriptor replica table
@@ -145,25 +116,38 @@ static struct option long_options[] =
    {"version",      0, 0, 'V'},
    {"fsname",       1, 0, 'n'},
    {"log",          1, 0, 'l'},
+   {"ctl",          1, 0, 'c'},
    {"fuseoptions",  1, 0, 'f'},
    {"o",            1, 0, 'o'},
    {"quiet",        0, 0, 'q'},
    {0, 0, 0, 0}
 };
 
-char short_options[] = "h?Vn:l:f:o:q";
+char short_options[] = "h?Vc:n:l:f:o:q";
 
 /* getopt_long stores the option index here. */
 int option_index = 0;
 
+
+int  res, c, qtopt, fuse_argvlen=0;
+char *argvbuf = NULL, *fuse_options = NULL, *fuse_arg=NULL, *fuse_argv[4];
+char *myname;
+char *ctlname   = NULL;
+int   mount_ctl = 0;
+
 #else
 
-extern char                   *errtab[];
 extern fd_t                    tab_fd;
 extern long long unsigned int  FD_BUF_SIZE;
 extern struct option          *long_options;
 extern char                   *short_options;
 extern int                     option_index;
+
+extern int  res, c, qtopt, fuse_argvlen;
+extern char *argvbuf, *fuse_options, *fuse_arg, *fuse_argv[4];
+extern char *myname;
+extern char *ctlname;
+extern int   mount_ctl;
 
 #endif
 
@@ -174,13 +158,10 @@ int **mk_round_robin(int *tmp_list, int dim);
 void free_paths(void);
 void print_paths(void);
 int do_mount(char *filesystems, char *mountpoint);
-char *xlate(const char *fname, char *rpath);
 unsigned hash_fd(unsigned fd_main);
 int fd_hashseekfree(unsigned fd_ndx);
 int fd_hashset(int *fd);
 int fd_hashseek(int fd_main);
-void print_err(int err, char *specifier);
-void call_log(char *fnname, char *resource, int err);
 // 
 // The lines below are from a patch contributed by Antti Kantee
 // to make ChironFS run on NetBSD
@@ -197,7 +178,6 @@ int choose_replica(int try);
 void disable_replica(int n);
 void opt_parse(char *fo, char**log, char**argvbuf);
 void printf_args(int argc, char**argv, int ndx);
-void attach_log(void);
 void print_version(void);
 char *chiron_realpath(char *path);
 void free_round_robin(int **rr, int max_rep);
@@ -208,10 +188,17 @@ int get_rights_by_name_l(const char *fname);
 int get_rights_by_fd(int fd);
 int check_may_enter(char *fname);
 int get_rights_by_mode(struct stat stb);
-#if defined _DBG_
-void debug(const char *s, ...);
-int timeval_sub (struct timeval *result, struct timeval *x, struct timeval *y);
+int chiron_mkdir(const char *path_orig, mode_t mode);
+int chiron_getattr(const char *path, struct stat *stbuf);
+void enable_replica(int n);
+void trust_replica(int n);
+int read_a_line(char **buf, int *c, FILE *f);
+void *start_ctl(void *arg);
+
+#if defined(_CHIRON_H_)
+void *chiron_init(struct fuse_conn_info *conn);
 #endif
+
 
 // static void chiron_destroy(void *notused);
 

@@ -33,12 +33,15 @@
 #include <fuse.h>
 #if defined(linux) || defined(__FreeBSD__)
 
-#include <fuse/fuse.h>
+//#include <fuse/fuse.h>
 #include <fuse/fuse_opt.h>
 
 #else
+
+typedef  uint64_t cpuset_t;
+
 // 
-// The lines below are from a patch contributed by Antti Kantee
+// The line below are from a patch contributed by Antti Kantee
 // to make ChironFS run on NetBSD
 //
 
@@ -97,145 +100,32 @@
 #include <stdint.h>
 #include <pwd.h>
 #include <grp.h>
+#include <sys/stat.h>
 
 
-#include "config.h"
+#ifdef __linux__
 
-#define _CHIRON_H_
-#include "chironfs.h"
+#define _REENTRANT
 
-////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
-//
-//
-//  D E B U G    S T U F F
-//
-//
-////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
+#ifndef _POSIX_SOURCE
+#define _POSIX_SOURCE
+#endif
 
-#ifdef _DBG_
-
-#define dbg(param) debug param
-#define timeval_subtract(res, x, y) timeval_sub(res, x, y)
-#define gettmday(t,p) gettimeofday(t,p)
-#define decl_tmvar(a,b,c) struct timeval a, b, c
-
-void debug(const char *s, ...)
-{
-   FILE *fd;
-   int res;
-   int bkerrno = errno;
-   va_list ap;
-
-   va_start (ap, s);
-   fd  = fopen("/tmp/chironfs-dbg.txt","a");
-   res = vfprintf(fd,s,ap);
-   fclose(fd);
-   va_end (ap);
-
-   errno = bkerrno;
-}
-
-/*
-   Subtract the `struct timeval' values X and Y,
-   storing the result in RESULT.
-   Return 1 if the difference is negative, otherwise 0.
-*/
-
-int timeval_sub (struct timeval *result, struct timeval *x, struct timeval *y)
-{
-   /* Perform the carry for the later subtraction by updating y. */
-   if (x->tv_usec < y->tv_usec) {
-      int nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
-      y->tv_usec -= 1000000 * nsec;
-      y->tv_sec += nsec;
-   }
-   if (x->tv_usec - y->tv_usec > 1000000) {
-      int nsec = (x->tv_usec - y->tv_usec) / 1000000;
-      y->tv_usec += 1000000 * nsec;
-      y->tv_sec -= nsec;
-   }
-  
-   /* Compute the time remaining to wait.
-      tv_usec is certainly positive. */
-   result->tv_sec = x->tv_sec - y->tv_sec;
-   result->tv_usec = x->tv_usec - y->tv_usec;
-  
-   /* Return 1 if result is negative. */
-   return x->tv_sec < y->tv_sec;
-}
-
-#else
-
-#define dbg(param)
-#define timeval_subtract(res, x, y)
-#define gettmday(t,p)
-#define decl_tmvar(a,b,c)
-
+/* for LinuxThreads */
+#define _P __P
 
 #endif
 
+#include <pthread.h>
 
-////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
-//
-//
-//  A U X I L I A R Y    F U N C T I O N S
-//
-//
-////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
+#include "config.h"
 
-void print_err(int err, char *specifier)
-{
-   if (!quiet_mode) {
-      if (specifier==NULL) {
-         if (err>0) {
-            fprintf(stderr,"%s\n",strerror(err));
-         } else {
-            fprintf(stderr,"%s\n",errtab[-(err+1)]);
-         }
-      } else {
-         if (err>0) {
-            fprintf(stderr,"%s: %s\n",specifier,strerror(err));
-         } else {
-            fprintf(stderr,"%s: %s\n",specifier,errtab[-(err+1)]);
-         }
-      }
-   }
-}
+#include "chiron-types.h"
+#include "chirondbg.h"
+#include "chironfn.h"
+#define _CHIRON_H_
+#include "chironfs.h"
 
-
-void call_log(char *fnname, char *resource, int err)
-{
-   time_t     t;
-   struct tm *ptm;
-   char       tmstr[20];
-
-   if (logfd!=NULL) {
-      attach_log();
-      flockfile(logfd);
-      t   = time(NULL);
-      ptm = localtime(&t);
-      strftime(tmstr,19,"%Y/%m/%d %H:%M ",ptm);
-      fputs(tmstr,logfd);
-      fputs(fnname,logfd);
-      fputs(" failed accessing ",logfd);
-      fputs(resource,logfd);
-      if (err) {
-         fputs(" ",logfd);
-         if (err>0) {
-            fputs(strerror(err),logfd);
-         } else {
-            fputs(errtab[-(err+1)],logfd);
-         }
-      }
-      fputs("\n",logfd);
-      fflush(logfd);
-      funlockfile(logfd);
-   }
-}
 
 ////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////
@@ -403,9 +293,37 @@ int choose_replica(int try)
 
 void disable_replica(int n)
 {
-   call_log("disabling replica ",paths[n].path,0);
-   paths[n].disabled = time(NULL);
+   if (n<0) {
+      call_log("disabling replica",paths[-n].path,CHIRONFS_ADM_FORCED);
+      paths[-n].disabled = time(NULL);
+   } else {
+      call_log("disabling replica",paths[n].path,0);
+      paths[n].disabled = time(NULL);
+   }
 }
+
+void enable_replica(int n)
+{
+   if (n<0) {
+      call_log("enabling replica",paths[-n].path,CHIRONFS_ADM_FORCED);
+      paths[-n].disabled = (time_t)1;
+   } else {
+      call_log("enabling replica",paths[n].path,0);
+      paths[n].disabled = (time_t)1;
+   }
+}
+
+void trust_replica(int n)
+{
+   if (n<0) {
+      call_log("trusting replica",paths[-n].path,CHIRONFS_ADM_FORCED);
+      paths[-n].disabled = (time_t)0;
+   } else {
+      call_log("trusting replica",paths[n].path,0);
+      paths[n].disabled = (time_t)0;
+   }
+}
+
 
 ////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////
@@ -1021,7 +939,7 @@ static int chiron_statfs(const char *path, struct statvfs *stbuf)
    dodir_byname_ro(statvfs(fname, stbuf),"statfs"); // fs info->superblock
 }
 
-static int chiron_getattr(const char *path, struct stat *stbuf)
+int chiron_getattr(const char *path, struct stat *stbuf)
 {
                                                       dbg(("\ngetattr: %s\n",path));
    dodir_byname_ro(lstat(fname, stbuf),"getattr");
@@ -1212,7 +1130,8 @@ static int chiron_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 //   (void) offset;
    (void) fi;
-                                                        dbg(("\nreaddir: %s, offset: %ld\n",path,offset));
+                                                         dbg(("\nreaddir: %s, offset: %ld\n",path,offset));
+
    err_list = calloc(max_replica,sizeof(int));
    if (err_list==NULL) {
       return -ENOMEM;
@@ -1617,7 +1536,7 @@ static int chiron_unlink(const char *path_orig)
    ),||,0,EACCES);
 }
 
-static int chiron_mkdir(const char *path_orig, mode_t mode)
+int chiron_mkdir(const char *path_orig, mode_t mode)
 {
                                                          dbg(("\nmkdir: %s\n",path_orig));
    char   *fname, *path, *slash, *dname;
@@ -2041,6 +1960,52 @@ return(0);
 }
 
 
+//////////////////////////////////////
+
+
+
+    /**
+     * Initialize filesystem
+     *
+     * The return value will passed in the private_data field of
+     * fuse_context to all file operations and as a parameter to the
+     * destroy() method.
+     *
+     * Introduced in version 2.3
+     */
+void *chiron_init(struct fuse_conn_info *conn)
+{
+   struct stat st;
+   pthread_t   thand;
+   int         i;
+
+   (void) conn;
+
+   if (mount_ctl) {
+                                                      dbg(("\nctl: struct stat initialized"));
+      i = stat(chironctl_mountpoint,&st);
+                                                      dbg(("\nctl: getattr=%d",i));
+      if (i==ENOENT) {
+                                                      dbg(("\nctl: NOENT"));
+         i = mkdir(chironctl_mountpoint,S_IFDIR | S_IREAD | S_IEXEC);
+                                                      dbg(("\nctl: mkdir=%d",i));
+      }
+
+      if (i) {
+                                                      dbg(("\nctl: nomkdir"));
+         call_log("control directory",chironctl_mountpoint,-i);                   \
+         return(NULL);
+      }
+
+      if (pthread_create(&thand,NULL,start_ctl, NULL) != 0) {
+         // must end program here
+         return(NULL);
+      }
+   }
+   return(NULL);
+}
+
+
 
     /** Possibly flush cached data
      *
@@ -2085,17 +2050,6 @@ static int chiron_flush(const char *path, struct fuse_file_info *fi)
      * Introduced in version 2.3
      */
     int (*fsyncdir) (const char *, int, struct fuse_file_info *);
-
-    /**
-     * Initialize filesystem
-     *
-     * The return value will passed in the private_data field of
-     * fuse_context to all file operations and as a parameter to the
-     * destroy() method.
-     *
-     * Introduced in version 2.3
-     */
-    void *(*init) (void);
 
     /**
      * Change the size of an open file
@@ -2175,45 +2129,152 @@ static void chiron_destroy(void *notused)
    free_paths();
 }
 
-static struct fuse_operations chiron_oper = {
-    .destroy      = chiron_destroy,
-    .getattr      = chiron_getattr,
-    .access       = chiron_access,
-    .readlink     = chiron_readlink,
-    .readdir      = chiron_readdir,
-    .mknod        = chiron_mknod,
-    .mkdir        = chiron_mkdir,
-    .symlink      = chiron_symlink,
-    .unlink       = chiron_unlink,
-    .rmdir        = chiron_rmdir,
-    .rename       = chiron_rename,
-    .link         = chiron_link,
-    .chmod        = chiron_chmod,
-    .chown        = chiron_chown,
-    .truncate     = chiron_truncate,
-    .utime        = chiron_utime,
-    .open         = chiron_open,
-    .read         = chiron_read,
-    .write        = chiron_write,
-    .statfs       = chiron_statfs,
-    .release      = chiron_release,
-    .fsync        = chiron_fsync,
-    .flush        = chiron_flush,
-#ifdef HAVE_SETXATTR
-    .setxattr     = chiron_setxattr,
-    .getxattr     = chiron_getxattr,
-    .listxattr    = chiron_listxattr,
-    .removexattr  = chiron_removexattr,
-#endif
-};
+//typedef void *(* fninit_t) (struct fuse_conn_info *conn);
 
+#include "chironoper.h"
+
+
+/////////////////////////////////////////////////////////////////
+
+void *start_ctl(void *arg)
+{
+   // parent writes, son reads
+   int ctlpipe_parson[2];
+
+   // son writes, parent reads
+   int ctlpipe_sonpar[2];
+
+   // parent decriptors
+   FILE *fi, *fo;
+
+   char *buf = NULL;
+   int   i, sz, someerr;
+//   struct tm t;
+
+   (void) arg;
+
+                                                            dbg(("\nthread: started\n"));
+
+   if (pipe(ctlpipe_parson)<0) {
+      pthread_exit("error");
+   }
+   
+   if (pipe(ctlpipe_sonpar)<0) {
+      pthread_exit("error");
+   }
+   
+   pid_t pid;
+   if ((pid = fork())==0) {
+      // I am the child
+      close(ctlpipe_parson[1]);
+      close(ctlpipe_sonpar[0]);
+                                                            dbg(("\nfork: I am the child\n"));
+
+      if (ctlpipe_parson[0] != STDIN_FILENO) {
+         dup2 (ctlpipe_parson[0], STDIN_FILENO);
+         close (ctlpipe_parson[0]);
+      }
+      if (ctlpipe_sonpar[1] != STDOUT_FILENO) {
+         dup2 (ctlpipe_sonpar[1], STDOUT_FILENO);
+         close (ctlpipe_sonpar[1]);
+      }
+      // After forking, run the prog who implements the 
+      // proc-like filesystem to control the main chironfs
+                                                            dbg(("\nchild: execing %s\n",ctlname));
+      execlp(ctlname,ctlname,NULL);
+                                                            dbg(("\nchild: failed execing %s error is %d\n",ctlname,errno));
+   } else if (pid<0) {
+      pthread_exit("error");
+   }
+   // I am the parent
+   close(ctlpipe_parson[0]);
+   close(ctlpipe_sonpar[1]);
+
+                                                            dbg(("\nfork: I am the parent\n"));
+   fi = fdopen(ctlpipe_sonpar[0],"r");
+   fo = fdopen(ctlpipe_parson[1],"w");
+
+   while (1) {
+      someerr = read_a_line(&buf,&sz,fi);
+      if (someerr) {
+         pthread_exit("error");
+      }
+                                                            dbg(("\nparent: got a msg %s\n",buf));
+      if (strncmp(buf,"stat:",5)==0) {
+         // status request
+         for(i=0;i<max_replica;++i) {
+            sscanf(buf+5,"%02X",&i);
+            if ((i>=0)&&(i<max_replica)) {
+               if (((int)paths[i].disabled)<2) {
+                  fprintf(fo,"0001%1X",((int)paths[i].disabled)); // enabled, but untrusted
+               } else {
+//                  localtime_r(((time_t *)(&paths[i].disabled)),&t);
+//                  fprintf(fo,"000E%04d%02d%02d%02d%02d%02d",t.tm_year+1900,t.tm_mon+1,t.tm_mday,t.tm_hour,t.tm_min,t.tm_sec); // disabled
+                  fprintf(fo,"00012"); // disabled
+               }
+               fflush(fo);
+               break;
+            }
+         }
+      } else if (strncmp(buf,"disable:",8)==0) {
+         // put replica in inactive state
+         sscanf(buf+8,"%2X",&i);
+         if ((i>=0)&&(i<max_replica)) {
+            disable_replica(-i);
+            fprintf(fo,"0002OK");
+         } else {
+            fprintf(fo,"0003ERR");
+         }
+         fflush(fo);
+/*
+      } else if (strncmp(buf,"enable:",7)==0) {
+         // put replica in partial active state
+         // but do not trust it entirely
+         sscanf(buf+6,"%2X",&i);
+         if ((i>=0)&&(i<max_replica)) {
+            enable_replica(-i);
+            fprintf(fo,"0002OK");
+         } else {
+            fprintf(fo,"0003ERR");
+         }
+         fflush(fo);
+*/
+      } else if (strncmp(buf,"trust:",6)==0) {
+         // put replica in active state and trust it
+         sscanf(buf+6,"%2X",&i);
+         if ((i>=0)&&(i<max_replica)) {
+            trust_replica(-i);
+            fprintf(fo,"0002OK");
+         } else {
+            fprintf(fo,"0003ERR");
+         }
+         fflush(fo);
+      } else if (strcmp(buf,"info")==0) {
+         // get fs info
+         fprintf(fo,"%4X%s",(unsigned int)strlen(mount_point),mount_point);
+         fflush(fo);
+         fprintf(fo,"%4X%s",(unsigned int)strlen(chironctl_mountpoint),chironctl_mountpoint);
+         fflush(fo);
+         fprintf(fo,"0002%02X",max_replica);
+         fflush(fo);
+         for(i=0;i<max_replica;++i) {
+            fprintf(fo,"%4X%s",(unsigned int)paths[i].pathlen,paths[i].path);
+            fflush(fo);
+         }
+      } else {
+         fprintf(fo,"0003ERR");
+         fflush(fo);
+      }
+   }
+
+}
 
 void print_version(void)
 {
    printf(
       "This is the ChironFS V%s, a Fuse based filesystem which implements\n"
       "filesystem replication.\n",
-      VERSION
+      PACKAGE_VERSION
    );
 }
 
@@ -2224,13 +2285,14 @@ void help(void)
    print_version();
    puts(
       "Options:\n"
+      "\t--ctl, -c PATH\n"
+      "\t\tMounts a proc-like filesystem in PATH enabling control operations,\n"
+      "\t\tsee man page and howto to more info about it.\n"
       "\t--fuseoptions FUSE OPTIONS, -f FUSE OPTIONS\n"
       "\t\tHere you can set Fuse specific options. See Fuse\n"
       "\t\tspecific documentation for more help.\n"
       "\t--help, -h, -?\n"
       "\t\tPrints this help\n"
-      "\t--version, -V\n"
-      "\t\tPrints version of the software\n"
       "\t--log FILE, -l FILE\n"
       "\t\tSets a log filename. If you don't set it, no log will be\n"
       "\t\tdone at all\n"
@@ -2239,6 +2301,8 @@ void help(void)
       "\t--quiet, -q\n"
       "\t\tDo not print error messages to stderr, just set the exit codes\n"
       "\t\tThis does not affect logging\n"
+      "\t--version, -V\n"
+      "\t\tPrints version of the software\n"
       "\n"
       "path=path[=path[=path...]]\n"
       "\tThis the '=' separated list of paths where the replicas will be stored\n"
@@ -2306,8 +2370,6 @@ char *chiron_realpath(char *path)  //UPD: Check all
 
 int main(int argc, char *argv[])
 {
-   int  res, c, qtopt, fuse_argvlen=0;
-   char *argvbuf = NULL, *fuse_options = NULL, *fuse_arg=NULL, *fuse_argv[4];
 
    umask(0);
 
@@ -2366,6 +2428,15 @@ int main(int argc, char *argv[])
                    }
                    qtopt+=2;
                    break;
+         case 'c':
+                   mount_ctl = 1;
+                   chironctl_mountpoint = do_realpath(optarg,NULL);
+                   if (chironctl_mountpoint==NULL) {
+                      print_err(CHIRONFS_ERR_LOW_MEMORY,"comand line option (-c) mount point allocation");
+                      exit(CHIRONFS_ERR_LOW_MEMORY);
+                   }
+                   qtopt+=2;
+                   break;
          case 'q':
                    quiet_mode = 1;
                    qtopt++;
@@ -2390,12 +2461,14 @@ int main(int argc, char *argv[])
       if (argv[qtopt+2][0]==':') {
          argvbuf = malloc(30+strlen(argv[qtopt+1]));
          if (argvbuf!=NULL) {
-            sprintf(argvbuf,"fsname=%s,direct_io,nonempty", argv[qtopt+1]);
+//            sprintf(argvbuf,"fsname=%s,direct_io,nonempty", argv[qtopt+1]);
+            sprintf(argvbuf,"fsname=%s,nonempty", argv[qtopt+1]);
          }
       } else {
          argvbuf = malloc(20+strlen(argv[qtopt+1]));
          if (argvbuf!=NULL) {
-            sprintf(argvbuf,"fsname=%s,direct_io", argv[qtopt+1]);
+//            sprintf(argvbuf,"fsname=%s,direct_io", argv[qtopt+1]);
+            sprintf(argvbuf,"fsname=%s", argv[qtopt+1]);
          }
       }
    }
@@ -2460,6 +2533,20 @@ int main(int argc, char *argv[])
             dbg(("%s -> %s (%s)\n",mntbufp[i].f_mntfromname,mntbufp[i].f_mntonname,mntbufp[i].f_fstypename));
          }
 #endif
+
+         if (mount_ctl) {
+            ctlname = strdup(argv[0]);
+            if (ctlname==NULL) {
+               free(argvbuf);
+               if (fuse_options!=NULL) {
+                  free(fuse_options);
+               }
+               free(fuse_arg);
+               print_err(-res,"trying to determine the name of the chirctl executable");
+               exit(-res);
+            }
+            sprintf(ctlname+strlen(ctlname)-4,"ctl");
+         }
 
          res = fuse_main(3, fuse_argv, &chiron_oper);
          free(argvbuf);

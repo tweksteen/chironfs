@@ -1,14 +1,41 @@
-.\" Copyright (c) 2007 Luis Otavio de Colla Furquim
+.\" Copyright (c) 2007-2008 Luis Otavio de Colla Furquim
 .\" This file may be copied under the terms of the GPLv3 included in this package and also found at its original location http://www.gnu.org/licenses/gpl-3.0.html
-.TH "ChironFS" "8" "1.0" "Luis Otavio de Colla Furquim" "Kernel/Filesystems"
+.TH "ChironFS" "8" "1.1" "Luis Otavio de Colla Furquim" "Kernel/Filesystems"
 .SH "NAME"
-ChironFS \- The Chiron Replication Filesystem version 1.0
+ChironFS \- The Chiron Replication Filesystem version 1.1
 .SH "SYNOPSIS"
 chironfs [\-?fhlqV] [\-\-fuseoptions <fuse options>] [\-\-help]
-         [\-\-version] [\-\-log <logfilename>] [\-\-quiet]
+         [\-\-version] [\-\-log <logfilename>] 
+         [\-\-quiet] [\-\-ctl <controlfilesystempathname>]
          [:]path=[:]path[=[:]path[=[:]path...]] mount\-point
 .SH "DESCRIPTION"
 Options: 
+  \-\-ctl, \-c CONTROLFILESYSTEMPATHNAME
+    By providing a mountpoint with this option, ChironFS
+    will also mount a proc\-like filesystem intended to
+    enable administrative functions of the replication
+    filesystem. Currently you can check the status of
+    each replica and manually change it. So, you can 
+    force disable a replica and, if you have already
+    reoperated a replica and synchronized it with the
+    others, you may tell ChironFS to use it again.
+    The control filesystem is composed of one directory
+    for each replica, containing two files: the first is
+    named "status" and contains a number "0" for replicas
+    in good state or a number "2" if the replica is 
+    disabled and the data is inconsistent. By echoing
+    "0" or "2" in this file you enable or disable the
+    replica. The second file, named "check_chironfs.sh",
+    is a script intended to run as a nagios plugin. If
+    you want to use it, do not copy it to another path,
+    because its contents change dynamically and it will
+    not work in another path. You cannot change ownership
+    or permission bits on any of the files/directories
+    in this filesystem. To configure who can access it,
+    change the ownership of its mount point BEFORE 
+    mounting it. ChironFS will use this ownership to all
+    files and directories under it.
+    
   \-\-fuseoptions FUSE OPTIONS, \-f FUSE OPTIONS 
     Here you can set Fuse specific options:
          \-d \-o debug
@@ -52,8 +79,6 @@ Options:
     See Fuse specific documentation for more help. 
   \-\-help, \-h, \-? 
     Prints the help 
-  \-\-version, \-V 
-    Prints version of the software 
   \-\-log FILE, \-l FILE 
     Sets a log filename. If you don't set it, no log will be 
     done at all 
@@ -63,6 +88,8 @@ Options:
   \-\-quiet, \-q 
     Do not print error messages to stderr, just set the exit
     codes. This does not affect logging 
+  \-\-version, \-V 
+    Prints version of the software 
 
 [:]path=[:]path[=[:]path[=[:]path...]] 
     This the "=" separated list of paths where the 
@@ -78,7 +105,7 @@ mount\-point
     accessed
 
 .SH "VERSION"
-This man page is correct for version 1.0 of the Chiron File System.
+This man page is correct for version 1.1 of the Chiron File System.
 .SH "DIAGNOSTICS "
 If you specify a log file using the \-l or the \-\-log command
 line option you will have critical failures reported in that
