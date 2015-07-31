@@ -16,83 +16,35 @@
  *
  */
 
+#ifndef CHIRONFS_CTL_H
+#define CHIRONFS_CTL_H
 
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdarg.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <dirent.h>
+#include <errno.h>
+#include <time.h>
+#include <sys/time.h>
 
+#include <sys/statvfs.h>
 
+#include <sys/stat.h>
 
-#ifdef _CHIRON_CTL_H_
+#include <stdint.h>
+#include <pwd.h>
+#include <grp.h>
 
-ctlfs_entry_t   ctlfs[2];
-//ctlfs_entry_t   ctl_state_file;
-int             max_replica          = 0;
-char           *mount_point          = NULL;
-char           *chironctl_mountpoint = NULL;
-path_t         *paths                = NULL;
-unsigned long   inode_count          = 0;
-char           *fuse_options         = "-oallow_other,debug";
-char           *chironctl_parentdir  = NULL;
-FILE           *tochironfs           = NULL;
-FILE           *fromchironfs         = NULL;
-pthread_mutex_t comm                 = PTHREAD_MUTEX_INITIALIZER;
-char            status_fname[]       = { "/status" };
-#define         NAGIOS_FNAME           "check_chironfs.sh"
-char            nagios_fname[]       = { "/" NAGIOS_FNAME };
-char            nagios_script[]      = {
-   "#!/bin/sh\n"
-   "\n"
-   "print_version() {\n"
-   "   echo 'This is the ChironFS Nagios check plugin version " PACKAGE_VERSION ".'\n"
-   "}\n"
-   "\n"
-   "print_usage() {\n"
-   "   echo 'Usage: " NAGIOS_FNAME "'\n"
-   "}\n"
-   "\n"
-   "print_help() {\n"
-   "   print_version\n"
-   "   echo ''\n"
-   "   print_usage\n"
-   "   echo ''\n"
-   "   echo 'This plugin checks the status of ChironFS replicas.'\n"
-   "   echo ''\n"
-   "   exit 0\n"
-   "}\n"
-   "\n"
-   "case \"$1\" in\n"
-   "   --help)\n"
-   "      print_help\n"
-   "      exit 0\n"
-   "      ;;\n"
-   "   -h)\n"
-   "      print_help\n"
-   "      exit 0\n"
-   "      ;;\n"
-   "   --version)\n"
-   "      print_version\n"
-   "      exit 0\n"
-   "      ;;\n"
-   "   -V)\n"
-   "      print_version\n"
-   "      exit 0\n"
-   "      ;;\n"
-   "   *)\n"
-   "      echo                                                     \n"
-   "      exit  \n"
-   "      ;;\n"
-   "esac\n"
-};
+#include <pthread.h>
 
-char            status_msgs[3][53] = {
-   { "OK - ChironFS replica enabled                       " },
-   { "WARNING - ChironFS replica enabled, but inconsistent" },
-   { "CRITICAL - ChironFS replica disabled                " }
-};
+#include "chiron-types.h"
+#include "debug.h"
+#include "utils.h"
 
-
-#else
-
-extern ctlfs_entry_t  *ctlfs;
-//extern ctlfs_entry_t   ctl_state_file;
+extern ctlfs_entry_t  ctlfs[];
 extern struct          fuse_operations chironctl_oper;
 extern int             max_replica;
 extern char           *mount_point;
@@ -102,12 +54,9 @@ extern unsigned long   inode_count;
 extern char           *chironctl_parentdir;
 extern FILE           *tochironfs, *fromchironfs;
 extern pthread_mutex_t comm;
-extern char           *status_fname;
-extern char           *nagios_fname;
-extern char           *nagios_script;
-
-#endif
-
+extern char           status_fname[];
+extern char           nagios_fname[];
+extern char           nagios_script[];
 
 int mkctlfs(void);
 ctlfs_entry_t mkstatnod(char *path, unsigned long mode, unsigned short uid, unsigned short gid);
@@ -118,3 +67,4 @@ int get_perm(uid_t uid, gid_t gid, struct stat st);
 int get_path_perm(const char *path);
 char *get_daddy(const char *path);
 
+#endif /* CHIRONFS_CTL_H */

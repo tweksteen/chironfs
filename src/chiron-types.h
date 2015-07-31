@@ -1,3 +1,9 @@
+#ifndef CHIRONFS_TYPES_H
+#define CHIRONFS_TYPES_H
+
+#include <time.h>
+#include <sys/stat.h>
+
 typedef struct {
    char   *path;
    long    totrd, totwr;
@@ -9,7 +15,6 @@ typedef struct {
    time_t  disabled;
    int     priority;
 } path_t;
-
 
 /* 
  * When a file is accessed, the chiron system transparently mirrors that
@@ -23,7 +28,6 @@ typedef struct FD {
    int **fd;
    int  used;
 } fd_t;
-
 
 /*
  *  These are the file attributes of the pseudo-filesystem
@@ -42,3 +46,4 @@ typedef struct FD {
    int                 i;
 } ctlfs_search_t;
 
+#endif /* CHIRONFS_TYPES_H */

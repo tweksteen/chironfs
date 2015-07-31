@@ -16,132 +16,22 @@
  *
  */
 
+#include "debug.h"
 
-#include "config.h"
+char *errtab[] = {
+   "Low memory",
+   "Log file must be outside of the mount point",
+   "",
+   "Too many opened files",
+   "Cannot open the log file",
+   "Invalid PATH_MAX definition, check your include files and recompile",
+   "Forced by administrator"
+};
+FILE    *logfd              = NULL;
+int      quiet_mode         = 0;
+char    *logname            = NULL;
 
-#ifdef linux
-#define __USE_BSD
-
-
-/* For pread()/pwrite() */
-#define _XOPEN_SOURCE 500
-#endif
-
-#define FUSE_USE_VERSION 25
-
-// 
-// The lines below are from a patch contributed by Yen-Ming Lee,
-// porting ChironFS to FreeBSD
-//
-#include <fuse.h>
-#if defined(linux) || defined(__FreeBSD__)
-
-#include <fuse/fuse.h>
-#include <fuse/fuse_opt.h>
-
-#else
-
-typedef  uint64_t cpuset_t;
-
-// 
-// The lines below are from a patch contributed by Antti Kantee
-// to make ChironFS run on NetBSD
-//
-
-#include <fuse_opt.h>
-
-#endif
-//
-// End of BSD patches
-//
-
-#ifdef __linux__
-#define __USE_BSD
-#endif
-
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdarg.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <dirent.h>
-#include <errno.h>
-#include <time.h>
-#include <sys/time.h>
-#include <libgen.h>
-
-#ifdef HAVE_SETXATTR
-#include <sys/xattr.h>
-#endif
-
-#ifdef __linux__
-
-#include <linux/limits.h>
-#include <mntent.h>
-#include <bits/wordsize.h>
-
-#else
-
-#include <limits.h>
-#include <sys/types.h>
-#include <sys/statvfs.h>
-
-#endif
-
-
-// 
-// The lines below are from a patch contributed by Yen-Ming Lee,
-// porting ChironFS to FreeBSD
-//
-#ifndef HAVE_GETMNTENT
-#include <sys/param.h>
-#include <sys/ucred.h>
-#include <sys/mount.h>
-#endif
-//
-// End of BSD patch
-//
-
-
-#include <stdint.h>
-#include <pwd.h>
-#include <grp.h>
-
-
-#ifdef __linux__
-
-#define _REENTRANT
-
-#ifndef _POSIX_SOURCE
-#define _POSIX_SOURCE
-#endif
-
-/* for LinuxThreads */
-#define _P __P
-
-#endif
-
-#include <pthread.h>
-
-
-#include "chiron-types.h"
-#define _CHIRONDBG_H_
-#include "chironfs.h"
-#include "chirondbg.h"
-
-
-////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
-//
-//
-//  D E B U G    S T U F F
-//
-//
-////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
-
-#ifdef _DBG_
+#ifdef DEBUG
 void debug(const char *s, ...);
 int timeval_sub (struct timeval *result, struct timeval *x, struct timeval *y);
 
@@ -180,28 +70,18 @@ int timeval_sub (struct timeval *result, struct timeval *x, struct timeval *y)
       y->tv_usec += 1000000 * nsec;
       y->tv_sec -= nsec;
    }
-  
+
    /* Compute the time remaining to wait.
       tv_usec is certainly positive. */
    result->tv_sec = x->tv_sec - y->tv_sec;
    result->tv_usec = x->tv_usec - y->tv_usec;
-  
+
    /* Return 1 if result is negative. */
    return x->tv_sec < y->tv_sec;
 }
 
 
 #endif
-
-////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
-//
-//
-//  A U X I L I A R Y    F U N C T I O N S
-//
-//
-////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////
 
 void print_err(int err, char *specifier)
 {
@@ -260,7 +140,7 @@ void call_log(char *fnname, char *resource, int err)
 void attach_log(void)
 {
    mode_t tmpmask;
-   
+
    if (logfd) {
       fclose(logfd);
    }
@@ -271,6 +151,6 @@ void attach_log(void)
       print_err(CHIRONFS_ERR_BAD_LOG_FILE,logname);
       exit(CHIRONFS_ERR_BAD_LOG_FILE);
    }
-   setlinebuf(logfd);
+   setvbuf(logfd, NULL, _IOLBF, 0);
 }
 
