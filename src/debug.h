@@ -6,28 +6,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <stdarg.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <dirent.h>
 #include <errno.h>
 #include <time.h>
-#include <sys/time.h>
-#include <libgen.h>
-#include <stdint.h>
-#include <pwd.h>
-#include <grp.h>
-#include <limits.h>
-#include <sys/types.h>
-#include <sys/statvfs.h>
 
-#ifdef HAVE_SETXATTR
-#include <sys/xattr.h>
-#endif
-
-#include <pthread.h>
-
-#include "chiron-types.h"
 #include "fs.h"
 
 #ifdef DEBUG

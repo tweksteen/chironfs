@@ -32,9 +32,6 @@ int      quiet_mode         = 0;
 char    *logname            = NULL;
 
 #ifdef DEBUG
-void debug(const char *s, ...);
-int timeval_sub (struct timeval *result, struct timeval *x, struct timeval *y);
-
 void debug(const char *s, ...)
 {
    FILE *fd;
@@ -79,7 +76,6 @@ int timeval_sub (struct timeval *result, struct timeval *x, struct timeval *y)
    /* Return 1 if result is negative. */
    return x->tv_sec < y->tv_sec;
 }
-
 
 #endif
 
