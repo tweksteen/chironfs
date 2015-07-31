@@ -199,28 +199,47 @@ char *do_realpath(const char *path, char *resolvedpath)
 	return realpath(path, resolvedpath);
 }
 
-#endif 
+#endif
+
+unsigned int get_file_max()
+{
+	int res;
+	unsigned long long fmax;
+#ifdef __linux__
+	FILE *tmpf;
+#else
+	int    oldval;
+	size_t oldlenp = sizeof(oldval);
+	int    sysctl_names[] = { CTL_KERN, KERN_MAXFILES };
+#endif
+
+#ifdef __linux__
+	if((tmpf = fopen("/proc/sys/fs/file-max", "r")) != NULL) {
+		int res = fscanf(tmpf, "%lld", &fmax);
+		fclose(tmpf);
+	} else {
+		fmax = 4096;
+	}
+#else
+	res = sysctl(sysctl_names, 2, &oldval, &oldlenp, NULL, 0);
+	if (res) {
+		print_err(errno,"reading system parameter 'max open files'");
+		fmax = 4096;
+	} else {
+		fmax = (long long unsigned int) oldval;
+	}
+#endif
+	return fmax;
+}
 
 
 
 int do_mount(char *filesystems, char *mountpoint)
 {
-	int    i, start, res, errno, rep_on_mount=0, err;
+	int    i, start, errno, rep_on_mount=0, err;
 	int    *tmp_high, *tmp_low;
 	unsigned long tmpfd;
 	struct rlimit rlp;
-	int    oldval;
-	size_t oldlenp = sizeof(oldval);
-	int    sysctl_names[] = {
-#ifdef __linux__
-		CTL_FS, FS_MAXFILE
-#else
-			CTL_KERN, KERN_MAXFILES
-#endif
-	};
-
-
-
 
 	for(max_replica=1,i=0;filesystems[i];++i) {
 		if (filesystems[i]=='=') {
@@ -233,13 +252,7 @@ int do_mount(char *filesystems, char *mountpoint)
 		max_replica++;
 	}
 
-	res = sysctl (sysctl_names, 2, &oldval, &oldlenp, NULL, 0);
-	if (res) {
-		print_err(errno,"reading system parameter 'max open files'");
-		FD_BUF_SIZE = 4096;
-	} else {
-		FD_BUF_SIZE = (long long unsigned int) oldval;
-	}
+	FD_BUF_SIZE = get_file_max();
 
 	tmpfd = (FD_BUF_SIZE >>= 1);
 

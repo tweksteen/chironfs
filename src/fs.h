@@ -60,7 +60,6 @@
 #include "utils.h"
 #include "hash.h"
 
-
 extern int      max_replica;
 extern int      curr_replica;
 extern int      max_replica_high;
@@ -77,15 +76,6 @@ extern char    *mount_point;
 extern uint64_t   qt_hash_bits;
 extern uint64_t   hash_mask;
 extern char *chironctl_mountpoint;
-
-// Error codes
-#define CHIRONFS_ERR_LOW_MEMORY        -1
-#define CHIRONFS_ERR_LOG_ON_MOUNTPOINT -2
-#define CHIRONFS_ERR_BAD_OPTIONS       -3
-#define CHIRONFS_ERR_TOO_MANY_FOPENS   -4
-#define CHIRONFS_ERR_BAD_LOG_FILE      -5
-#define CHIRONFS_INVALID_PATH_MAX      -6
-#define CHIRONFS_ADM_FORCED            -7
 
 
 #ifdef __linux__

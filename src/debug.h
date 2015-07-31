@@ -5,12 +5,12 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
 #include <time.h>
-
-#include "fs.h"
+#include <sys/time.h>
 
 #ifdef DEBUG
 #define dbg(param, ...) debug(param, ##__VA_ARGS__)

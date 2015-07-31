@@ -16,4 +16,12 @@ typedef  uint64_t cpuset_t;
 #include <fuse.h>
 #include <fuse_opt.h>
 
+#define CHIRONFS_ERR_LOW_MEMORY        -1
+#define CHIRONFS_ERR_LOG_ON_MOUNTPOINT -2
+#define CHIRONFS_ERR_BAD_OPTIONS       -3
+#define CHIRONFS_ERR_TOO_MANY_FOPENS   -4
+#define CHIRONFS_ERR_BAD_LOG_FILE      -5
+#define CHIRONFS_INVALID_PATH_MAX      -6
+#define CHIRONFS_ADM_FORCED            -7
+
 #endif /* CHIRONFS_COMMON_H */

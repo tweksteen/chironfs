@@ -18,6 +18,10 @@
 #include <sys/resource.h>
 #include <sys/sysctl.h>
 
-#include "debug.h"
+#ifdef __linux__
+#include <linux/sysctl.h>
+#endif
+
+#include "fs.h"
 
 #endif /* CHIRONFS_CONF_H */
