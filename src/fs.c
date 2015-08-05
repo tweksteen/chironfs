@@ -1,5 +1,5 @@
 /* Copyright 2005-2008 Luis Furquim
- *
+ * Copyright 2015 Thiébaud Weksteen
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,58 +18,45 @@
 
 #include "fs.h"
 
-int max_replica          = 0;
-int curr_replica         = 0;
-int max_replica_high     = 0;
-int curr_replica_high    = 0;
-int max_replica_low      = 0;
-int curr_replica_low     = 0;
-int max_replica_cache    = 0;
-int curr_replica_cache   = 0;
-int **round_robin_high   = NULL;
-int **round_robin_low    = NULL;
-int **round_robin_cache  = NULL;
-path_t *paths            = NULL;
-char *mount_point        = NULL;
-uint64_t qt_hash_bits    = 0;
-uint64_t hash_mask       = 0;
-char *chironctl_mountpoint  = NULL;
-
-// file descriptor replica table
-fd_t tab_fd = { NULL, 0 };
-
-// Defines the size of chunks allocated to store the file descriptor replica tables
-long long unsigned int FD_BUF_SIZE;
-
-static struct option long_options[] =
-{
-   {"help",         0, 0, 'h'},
-   {"version",      0, 0, 'V'},
-   {"fsname",       1, 0, 'n'},
-   {"log",          1, 0, 'l'},
-   {"ctl",          1, 0, 'c'},
-   {"fuseoptions",  1, 0, 'f'},
-   {"o",            1, 0, 'o'},
-   {"quiet",        0, 0, 'q'},
-   {0, 0, 0, 0}
+struct chironfs_config config = {
+	.max_replica = 0,
+	.max_replica_high = 0,
+	.max_replica_low = 0,
+	.curr_replica_high = 0,
+	.curr_replica_low = 0,
+	.round_robin_high = NULL,
+	.round_robin_low = NULL,
+	.replicas = NULL,
+	.mountpoint = NULL,
+	.chironctl_mountpoint = NULL,
+	.chironctl_execname = "chironctl",
+	.tab_fd = { NULL, 0 },
+	.fd_buf_size = 1
 };
 
-char short_options[] = "h?Vc:n:l:f:o:q";
+struct chironfs_options options;
+static struct fuse_opt chironfs_opts[] = {
+	CHIRON_OPT("--ctl %s",	       ctl_mountpoint, 0),
+	CHIRON_OPT("--log %s",	       logname, 0),
+	CHIRON_OPT("-l %s",	       logname, 0),
+	CHIRON_OPT("--quiet",	       quiet, 1),
+	CHIRON_OPT("-q",	       quiet, 1),
 
-/* getopt_long stores the option index here. */
-int  res, c, qtopt, fuse_argvlen=0;
-char *argvbuf = NULL, *fuse_options = NULL, *fuse_arg=NULL, *fuse_argv[4];
-char  *ctlname = NULL;
-int   mount_ctl = 0;
+	FUSE_OPT_KEY("-V",             KEY_VERSION),
+	FUSE_OPT_KEY("--version",      KEY_VERSION),
+	FUSE_OPT_KEY("-h",             KEY_HELP),
+	FUSE_OPT_KEY("--help",         KEY_HELP),
+	FUSE_OPT_END
+};
 
 
 unsigned hash_fd(unsigned fd_main)
 {
 
 	return(
-	       (qt_hash_bits > 32)
-	       ? (hash64shift(fd_main) & hash_mask)
-	       : (hash(fd_main) & hash_mask)
+	       (config.fd_buf_size > UINT_MAX)
+	       ? (hash64shift(fd_main) & (config.fd_buf_size - 1))
+	       : (hash(fd_main) & (config.fd_buf_size - 1))
 	      );
 }
 
@@ -80,16 +67,16 @@ int fd_hashseekfree(unsigned fd_ndx)
 
 	gettmday(&t1,NULL);
 
-	dbg("\nbufsz=%lx \thash=%lx",FD_BUF_SIZE,i);
+	dbg("bufsz=%#lx \thash=%#lx\n", config.fd_buf_size, i);
 
 	// If the hash address is used, search for an unused
 	// starting at the next address, otherwise use it
-	while ((tab_fd.fd[i]!=NULL) && (i<FD_BUF_SIZE)) {
+	while ((config.tab_fd.fd[i]!=NULL) && (i<config.fd_buf_size)) {
 		dbg("X");
 		i++;
 	}
-	if (i<FD_BUF_SIZE) {
-		dbg("\tused=%lx",i);
+	if (i<config.fd_buf_size) {
+		dbg("used=%#lx\n",i);
 
 		return(i);
 	}
@@ -97,16 +84,16 @@ int fd_hashseekfree(unsigned fd_ndx)
 	// If there is no free address until the end of the table
 	// then restart the search from the beginning of the table
 	i = 0;
-	while ((tab_fd.fd[i]!=NULL) && (i<fd_ndx)) {
+	while ((config.tab_fd.fd[i]!=NULL) && (i<fd_ndx)) {
 		i++;
 	}
 
 	gettmday(&t2,NULL);
 	timeval_subtract(&t3,&t2,&t1);
-	dbg("\nhash time %ld secs,  %ld usecs",t3.tv_sec,t3.tv_usec);
+	dbg("hash time %ld secs, %ld usecs\n",t3.tv_sec,t3.tv_usec);
 
 	if (i<fd_ndx) {
-		dbg("\tused=%lx",i);
+		dbg("\tused=%#lx\n",i);
 		return(i);
 	}
 
@@ -114,7 +101,7 @@ int fd_hashseekfree(unsigned fd_ndx)
 	// We expect that it never happens because we set
 	// the buffer to hold the file-max (the max opened
 	// file system-wide)
-	call_log("hash allocation","too many opened files",0);
+	_log("hash allocation","too many opened files",0);
 	return(CHIRONFS_ERR_TOO_MANY_FOPENS);
 }
 
@@ -122,90 +109,123 @@ int fd_hashset(int *fd)
 {
 	int i, fd_ndx = -1;
 
-	for(i=0;i<max_replica;++i) {
-		if ((!paths[i].disabled) && (fd[i]>=0)) {	
-			dbg("\nTrying %d %d\n", i, fd[i]);
+	for(i=0;i<config.max_replica;++i) {
+		if ((!config.replicas[i].disabled) && (fd[i]>=0)) {
+			dbg("trying %d %d\n", i, fd[i]);
 			fd_ndx = fd_hashseekfree(hash_fd(fd[i]));
 			break;
 		}
 	}
 
-	if (i==max_replica) {
+	if (i==config.max_replica) {
 		return(-1);
 	}
 
 	// If the hash address is not used then use it
 	if (fd_ndx>=0) {
-		tab_fd.fd[fd_ndx] = fd;
+		config.tab_fd.fd[fd_ndx] = fd;
 	}
 	return(fd_ndx);
 }
 
+char *xlate(const char *fname, char *rpath)
+{
+	char *rname;
+	int   rlen, flen;
+
+	if ((rpath==NULL)||(fname==NULL)) {
+		return(NULL);
+	}
+
+	if (!strcmp(rpath,".")) {
+		flen = strlen(fname);
+		rname = malloc(1+flen);
+		if (rname!=NULL) {
+			if (!strcmp(fname,"/")) {
+				strcpy(rname,currdir);
+			} else {
+				strcpy(rname,fname+1);
+			}
+		}
+	} else {
+		rlen = strlen(rpath);
+		flen = strlen(fname);
+		rname = malloc(1+rlen+flen);
+		if (rname!=NULL) {
+			strcpy(rname,rpath);
+			strcpy(rname+rlen,fname);
+		}
+	}
+	dbg("xlate %s\n",rname);
+	return(rname);
+}
+
 int choose_replica(int try)
 {
+	unsigned int i;
 	decl_tmvar(t1, t2, t3);
 	gettmday(&t1,NULL);
 
 	if (!try) {
-		curr_replica_high++;
-		if (curr_replica_high==max_replica_high) {
-			curr_replica_high = 0;
-		}
+		config.curr_replica_high = (config.curr_replica_high + 1) %
+			config.max_replica_high;
 	}
 
-	if (try==max_replica_high) {
-		curr_replica_low++;
-		if (curr_replica_low==max_replica_low) {
-			curr_replica_low = 0;
-		}
+	if (try == config.max_replica_high) {
+		config.curr_replica_low = (config.curr_replica_low + 1) %
+			config.max_replica_low;
 	}
 
 	gettmday(&t2,NULL);
 	timeval_subtract(&t3,&t2,&t1);
-	dbg("\nchoose_replica time %ld secs,  %ld usecs",t3.tv_sec,t3.tv_usec);
+	dbg("choose_replica time %ld secs, %ld usecs\n",t3.tv_sec,t3.tv_usec);
 
-	if (try<max_replica_high) {
-		dbg("\nhigh: try:  %u",try);
-		dbg(",\trepl: %u",curr_replica_high);
-		dbg(",\trr:   %u",round_robin_high[curr_replica_high][try]);
-		return(round_robin_high[curr_replica_high][try]);
+	if (try < config.max_replica_high) {
+		i = (config.curr_replica_high + try) % config.max_replica_high;
+		dbg("try=%u curr_replica_high=%u i=%u round_robin_high[i]=%u\n",
+		    try, config.curr_replica_high, i,
+		    config.round_robin_high[i]);
+		return config.round_robin_high[i];
 	}
-	dbg("\nlow try:  %u",try);
-	dbg(",\trepl: %u",curr_replica_low);
-	dbg(",\trr:   %u",round_robin_low[curr_replica_low][try-max_replica_high]);
-	return(round_robin_low[curr_replica_low][try-max_replica_high]);
+	else {
+		i = (config.curr_replica_low + try - config.max_replica_high) % config.max_replica_low;
+		dbg("try=%u curr_replica_low=%u i=%u round_robin_low[i]=%u\n",
+		    try, config.curr_replica_low, i,
+		    config.round_robin_low[i]);
+		return config.round_robin_low[i];
+	}
 }
 
 void disable_replica(int n)
 {
 	if (n<0) {
-		call_log("disabling replica",paths[-n].path,CHIRONFS_ADM_FORCED);
-		paths[-n].disabled = time(NULL);
+		_log("disabling replica",config.replicas[-n].path,CHIRONFS_ADM_FORCED);
+		config.replicas[-n].disabled = time(NULL);
 	} else {
-		call_log("disabling replica",paths[n].path,0);
-		paths[n].disabled = time(NULL);
+		_log("disabling replica",config.replicas[n].path,0);
+		config.replicas[n].disabled = time(NULL);
 	}
 }
 
 void enable_replica(int n)
 {
 	if (n<0) {
-		call_log("enabling replica",paths[-n].path,CHIRONFS_ADM_FORCED);
-		paths[-n].disabled = (time_t)1;
+		_log("enabling replica",config.replicas[-n].path,CHIRONFS_ADM_FORCED);
+		config.replicas[-n].disabled = (time_t)1;
 	} else {
-		call_log("enabling replica",paths[n].path,0);
-		paths[n].disabled = (time_t)1;
+		_log("enabling replica",config.replicas[n].path,0);
+		config.replicas[n].disabled = (time_t)1;
 	}
 }
 
 void trust_replica(int n)
 {
 	if (n<0) {
-		call_log("trusting replica",paths[-n].path,CHIRONFS_ADM_FORCED);
-		paths[-n].disabled = (time_t)0;
+		_log("trusting replica",config.replicas[-n].path,CHIRONFS_ADM_FORCED);
+		config.replicas[-n].disabled = (time_t)0;
 	} else {
-		call_log("trusting replica",paths[n].path,0);
-		paths[n].disabled = (time_t)0;
+		_log("trusting replica",config.replicas[n].path,0);
+		config.replicas[n].disabled = (time_t)0;
 	}
 }
 
@@ -244,157 +264,187 @@ if (slash!=NULL) {                                      \
 }
 
 
-#define decl_get_rights_vars()               \
-	static struct fuse_context *context;      \
-struct stat    stbuf;                     \
-int            i, res=0;                  \
-struct group  result_buf, *result=NULL;   \
-char          *buffer;                    \
-struct passwd *pw;                        \
-uid_t          pw_uid;                    \
-int            perm;                      \
-char         **member;                    \
-context  = fuse_get_context()
+// Returns permissions from struct stat
+int process_rights(struct stat *stbuf)
+{
+	int res, perm;
+	int i = 1024;
+	char *buffer;
+	struct group  result_buf, *result=NULL;
+	struct fuse_context *context = fuse_get_context();
+	struct passwd *pw;
+	char         **member;
+	uid_t  pw_uid;
 
-
-#define get_rights(fn,file)                                       \
-	if ((res=fn(file, &stbuf))<0) {                                \
-		dbg("\nfn1 ret=%d file=%s",res,file);    \
-		return(res);                                                \
+	//dbg("process_rights cuid=%d cgid=%d stuid=%d sgid=%d\n",
+	//    context->uid, context->gid, stbuf->st_uid, stbuf->st_gid);
+	if (context->uid == stbuf->st_uid) {
+		perm = (stbuf->st_mode & 0700) >> 6;
+	} else if (context->gid == stbuf->st_gid) {
+		perm = (stbuf->st_mode & 070) >> 3;
+	} else {
+		do {
+			buffer = calloc(i, sizeof(char));
+			if (buffer) {
+				res = getgrgid_r(stbuf->st_gid,
+						 &result_buf,
+						 buffer, i,
+						 &result);
+				if (res==ERANGE) {
+					free(buffer);
+					i <<= 1;
+				}
+			}
+		} while ((res==ERANGE) && buffer);
+		if (!buffer) {
+			errno = ENOMEM;
+			return -1;
+		}
+		if (result) {
+			member = result->gr_mem;
+			while (*member) {
+				pw = getpwnam(*member);
+				pw_uid = pw->pw_uid;
+				if (pw_uid==context->uid) {
+					perm = (stbuf->st_mode&070) >> 3;
+					break;
+				}
+				member++;
+			}
+			if (*member==NULL) {
+				perm = stbuf->st_mode&7;
+			}
+		} else {
+			perm = stbuf->st_mode&7;
+		}
+		free(buffer);
 	}
-
-#define process_rights()                                          \
-	dbg("\ncuid:%d\tstuid:%d",context->uid,stbuf.st_uid);  \
-if (context->uid==stbuf.st_uid) {                              \
-	perm = (stbuf.st_mode&0700) >> 6;                           \
-} else if (context->gid==stbuf.st_gid) {                       \
-	perm = (stbuf.st_mode&070) >> 3;                            \
-} else {                                                       \
-	i = 1024;                                                   \
-	do {                                                        \
-		buffer     = calloc(i,sizeof(char));                     \
-		if (buffer!=NULL) {                                      \
-			res = getgrgid_r(stbuf.st_gid,                        \
-					 &result_buf,                          \
-					 buffer, i,                           \
-					 &result);                            \
-			if (res==ERANGE) {                                    \
-				free(buffer);                                      \
-				i <<= 1;                                           \
-			}                                                     \
-		}                                                        \
-	} while ((res==ERANGE) && (buffer!=NULL));                  \
-	if (buffer==NULL) {                                         \
-		errno = ENOMEM;                                          \
-		return(-1);                                              \
-	}                                                           \
-	if (result!=NULL) {                                         \
-		member = result->gr_mem;                                 \
-		while (*member) {                                        \
-			pw = getpwnam(*member);                                \
-			pw_uid = pw->pw_uid;                                   \
-			if (pw_uid==context->uid) {                            \
-				perm = (stbuf.st_mode&070) >> 3;                    \
-				break;                                              \
-			}                                                      \
-			member++;                                              \
-		}                                                        \
-		if (*member==NULL) {                                     \
-			perm = stbuf.st_mode&7;                               \
-		}                                                        \
-	} else {                                                    \
-		perm = stbuf.st_mode&7;                                  \
-	}                                                           \
-	free(buffer);                                               \
+	return perm;
 }
 
 
 // verify if all directories in the path are allowed to enter (rwx, r-x or --x)
-#define may_enter(filename)                          \
-	dname = strdup(filename);                         \
-if (dname==NULL) {                                \
-	errno = ENOMEM;                                \
-	return(-1);                                    \
-}                                                 \
-bkdname = dname;                                  \
-do {                                              \
-	dname = dirname(dname);                        \
-	get_rights(stat,dname);                        \
-	process_rights();                              \
-	if (!(perm&1)) {                               \
-		free(dname);                                \
-		errno = EACCES;                             \
-		dbg("\ndirperm: %d",perm);  \
-		return(-1);                                 \
-	}                                              \
-} while ((dname!=NULL) && (strcmp(dname,"/")));   \
-free(bkdname)
+int may_enter(const char *filename)
+{
+	int perm;
+	char *dname, *bkdname;
+	struct stat stbuf;
+
+	dbg("may_enter %s\n", filename);
+	dname = strdup(filename);
+	if (!dname) {
+		errno = ENOMEM;
+		return -1;
+	}
+	bkdname = dname;
+	do {
+		dname = dirname(dname);
+		if(stat(dname, &stbuf)) {
+			dbg("may_enter stat failed\n");
+		}
+		perm = process_rights(&stbuf);
+		if (!(perm & 1)) {
+			free(bkdname);
+			errno = EACCES;
+			dbg("dirperm: %d\n", perm);
+			return -1;
+		}
+	} while (dname && (strcmp(dname,"/")));
+
+	free(bkdname);
+	return 0;
+}
 
 
 
 int get_rights_by_name(const char *fname)
 {
-	decl_get_rights_vars();
-	char          *dname, *bkdname;
+	int perm;
+	struct stat stbuf;
+	struct fuse_context *context = fuse_get_context();
+
+	dbg("get_rights_by_name %s\n", fname);
 	if (!context->uid) {
-		return(7);
+		return 7;
 	}
-	may_enter(fname);
-	get_rights(stat,fname);
-	process_rights();
-	dbg("\nperm: %d",perm);
-	return(perm);
+	if (may_enter(fname)) {
+		return -1;
+	}
+	if (stat(fname, &stbuf)) {
+		dbg("get_right_by_name stat failed");
+		return -1;
+	}
+	perm = process_rights(&stbuf);
+	dbg("perm: %d\n",perm);
+	return perm;
 }
 
 
 int get_rights_by_name_l(const char *fname)
 {
-	decl_get_rights_vars();
-	char          *dname, *bkdname;
+	int perm;
+	struct stat stbuf;
+	struct fuse_context *context = fuse_get_context();
+
+	dbg("get_rights_by_name_l %s\n", fname);
 	if (!context->uid) {
-		return(7);
+		return 7;
 	}
-	may_enter(fname);
-	get_rights(lstat,fname);
-	process_rights();
-	return(perm);
+	if (may_enter(fname)) {
+		return -1;
+	}
+	if (lstat(fname, &stbuf)) {
+		dbg("get_right_by_name_l stat failed");
+		return -1;
+	}
+	perm = process_rights(&stbuf);
+	dbg("perm: %d\n",perm);
+	return perm;
 }
 
 
 int get_rights_by_fd(int fd)
 {
-	decl_get_rights_vars();
+	int perm;
+	struct stat stbuf;
+	struct fuse_context *context = fuse_get_context();
+
+	dbg("get_rights_by_fd %d\n", fd);
 	if (!context->uid) {
-		return(7);
+		return 7;
 	}
-	get_rights(fstat,fd);
-	process_rights();
-	return(perm);
+	if (fstat(fd, &stbuf)) {
+		dbg("get_right_by_fd stat failed");
+		return -1;
+	}
+	perm = process_rights(&stbuf);
+	dbg("perm: %d\n",perm);
+	return perm;
 }
 
-int get_rights_by_mode(struct stat stb)
+int get_rights_by_mode(struct stat stbuf)
 {
-	decl_get_rights_vars();
-	stbuf = stb;
+	int perm;
+	struct fuse_context *context = fuse_get_context();
+
+	dbg("get_rights_by_mode\n");
 	if (!context->uid) {
 		return(7);
 	}
-
-	process_rights();
-	dbg("\nperm: %d",perm);
+	perm = process_rights(&stbuf);
+	dbg("perm: %d\n",perm);
 	return(perm);
 }
-
 
 int check_may_enter(char *fname)
 {
-	decl_get_rights_vars();
-	char          *dname, *bkdname;
+	struct fuse_context *context = fuse_get_context();
+
+	dbg("check_may_enter\n");
 	if (!context->uid) {
 		return(0);
 	}
-	may_enter(fname);
-	return(0);
+	return may_enter(fname);
 }
 
 
@@ -420,17 +470,17 @@ static int chiron_open(const char *path_orig, struct fuse_file_info *fi)
 	struct stat stbuf;
 	decl_tmvar(t1, t2, t3);
 	decl_tmvar(t4, t5, t6);
-	dbg("\nopen %s",path_orig);
+	dbg("\n@open %s\n", path_orig);
 
 	gettmday(&t1,NULL);
 
 
-	fd = calloc(max_replica,sizeof(int));
+	fd = calloc(config.max_replica,sizeof(int));
 	if (fd==NULL) {
 		return -ENOMEM;
 	}
 
-	err_list = calloc(max_replica,sizeof(int));
+	err_list = calloc(config.max_replica,sizeof(int));
 	if (err_list==NULL) {
 		free(fd);
 		return -ENOMEM;
@@ -439,10 +489,10 @@ static int chiron_open(const char *path_orig, struct fuse_file_info *fi)
 	path = strdup(path_orig);
 
 	if (path!=NULL) {
-		for(i=(max_replica-1);i>=0;--i) {
+		for(i=(config.max_replica-1);i>=0;--i) {
 			gettmday(&t5,NULL);
-			if (!paths[i].disabled) {
-				fname = xlate(path,paths[i].path);
+			if (!config.replicas[i].disabled) {
+				fname = xlate(path,config.replicas[i].path);
 				if (fname!=NULL) {
 					file_exists = lstat(fname, &stbuf);
 					if (file_exists<0) {
@@ -477,7 +527,7 @@ static int chiron_open(const char *path_orig, struct fuse_file_info *fi)
 						if (((perm&perm_mask)!=perm_mask) || (!perm_mask) || (!perm)) {
 							fail_cnt++;
 							err_list[i] = EACCES;
-							dbg("\nfailopen, perm=%d, perm_mask=%d, fi->flags=0%o\n",perm,perm_mask,fi->flags);
+							dbg("failopen, perm=%d, perm_mask=%d, fi->flags=0%o\n",perm,perm_mask,fi->flags);
 						} else {
 							fd[i] = open(fname,fi->flags);
 							if (fd[i]<=0) {
@@ -496,7 +546,7 @@ static int chiron_open(const char *path_orig, struct fuse_file_info *fi)
 									}
 								} else {
 									succ_cnt++;
-									dbg("\nopened fd=%x, perm=%d, perm_mask=%d, fi->flags=0%o\n",fd[i],perm,perm_mask,fi->flags);
+									dbg("opened fd=%x, perm=%d, perm_mask=%d, fi->flags=0%o\n",fd[i],perm,perm_mask,fi->flags);
 								}
 							}
 						}
@@ -511,18 +561,18 @@ static int chiron_open(const char *path_orig, struct fuse_file_info *fi)
 
 			gettmday(&t4,NULL);
 			timeval_subtract(&t6,&t5,&t4);
-			dbg("\nopen replica time %ld secs,  %ld usecs",t3.tv_sec,t3.tv_usec);
+			dbg("open replica time %ld secs, %ld usecs\n",t3.tv_sec,t3.tv_usec);
 
 		}
 		free(path);
 		if (fail_cnt && succ_cnt) {
-			for(i=0;i<max_replica;++i) {
-				if (!paths[i].disabled) {
+			for(i=0;i<config.max_replica;++i) {
+				if (!config.replicas[i].disabled) {
 					if (fd[i]<0) {
 						if (err_list[i]<0) {
-							call_log("open+chown",paths[i].path,-err_list[i]);
+							_log("open+chown",config.replicas[i].path,-err_list[i]);
 						} else {
-							call_log("open",paths[i].path,err_list[i]);
+							_log("open",config.replicas[i].path,err_list[i]);
 						}
 						disable_replica(i);
 					}
@@ -530,15 +580,15 @@ static int chiron_open(const char *path_orig, struct fuse_file_info *fi)
 			}
 		}
 
-		dbg("\nfd = %p [", fd);
-		for(i=0;i<max_replica;i++)
+		dbg("fd = %p [ ", fd);
+		for(i=0;i<config.max_replica;i++)
 			dbg("%x ", fd[i]);
 		dbg("]\n");
 		if (succ_cnt) {
 			free(err_list);
 			if ((fd_ndx=fd_hashset(fd))<0) {
-				for(i=(max_replica-1);i>=0;--i) {
-					if ((!paths[i].disabled) && (fd[i]>0)) {
+				for(i=(config.max_replica-1);i>=0;--i) {
+					if ((!config.replicas[i].disabled) && (fd[i]>0)) {
 						close(fd[i]);
 					}
 				}
@@ -548,18 +598,18 @@ static int chiron_open(const char *path_orig, struct fuse_file_info *fi)
 				free( fd );        /* Thanks to Patrick Prasse for send this patch line fixing a memory leak */
 				return -EMFILE;
 			}
-			//    we dont free fd anymore because it is being put in tab_fd. Now this will be freed only on close.
+			//    we dont free fd anymore because it is being put in config.tab_fd. Now this will be freed only on close.
 			fi->fh = fd_ndx;
 			return(0);
 		}
 		gettmday(&t2,NULL);
 		timeval_subtract(&t3,&t2,&t1);
-		dbg("\nopen total time %ld secs,  %ld usecs",t3.tv_sec,t3.tv_usec);
+		dbg("open total time %ld secs, %ld usecs\n",t3.tv_sec,t3.tv_usec);
 
-		for(i=(max_replica-1);i>=0;--i) {
-			if (!paths[i].disabled) {
+		for(i=(config.max_replica-1);i>=0;--i) {
+			if (!config.replicas[i].disabled) {
 				if (err_list[i]) {
-					dbg("\nretval: %d,%d,%d\n",-err_list[i],err_list[i],i);
+					dbg("retval: %d,%d,%d\n",-err_list[i],err_list[i],i);
 					errno = err_list[i];
 				}
 			}
@@ -585,23 +635,23 @@ static int chiron_release(const char *path, struct fuse_file_info *fi)
 	(void) path;
 
 	gettmday(&t1,NULL);
-	dbg("release(%d)",fi->fh);
-	if (tab_fd.fd[fi->fh]==NULL) {
+	dbg("\n@release %#lx\n",fi->fh);
+	if (config.tab_fd.fd[fi->fh]==NULL) {
 		return(-EINVAL);
 	}
 
-	for(i=0,r=-1;i<max_replica;++i) {
-		if ((tab_fd.fd[fi->fh][i]>0) && (!paths[i].disabled)) {
-			r &= close(tab_fd.fd[fi->fh][i]);
-			tab_fd.fd[fi->fh][i] = 0;
+	for(i=0,r=-1;i<config.max_replica;++i) {
+		if ((config.tab_fd.fd[fi->fh][i]>0) && (!config.replicas[i].disabled)) {
+			r &= close(config.tab_fd.fd[fi->fh][i]);
+			config.tab_fd.fd[fi->fh][i] = 0;
 		}
 	}
-	free(tab_fd.fd[fi->fh]); // this is the fd chunk allocated in the chiron_open function
-	tab_fd.fd[fi->fh] = NULL;
+	free(config.tab_fd.fd[fi->fh]); // this is the fd chunk allocated in the chiron_open function
+	config.tab_fd.fd[fi->fh] = NULL;
 
 	gettmday(&t2,NULL);
 	timeval_subtract(&t3,&t2,&t1);
-	dbg("\nrelease time %ld secs,  %ld usecs",t3.tv_sec,t3.tv_usec);
+	dbg("release time %ld secs,  %ld usecs\n",t3.tv_sec,t3.tv_usec);
 
 	return(r);
 }
@@ -619,21 +669,21 @@ static int chiron_read(const char *path, char *buf, size_t size,
 
 	gettmday(&t1,NULL);
 
-	dbg("read(%d)",fi->fh);
+	dbg("\n@read %x\n", fi->fh);
 
-	if (tab_fd.fd[fi->fh]==NULL) {
+	if (config.tab_fd.fd[fi->fh]==NULL) {
 		return(-EINVAL);
 	}
 
-	err_list = calloc(max_replica,sizeof(int));
+	err_list = calloc(config.max_replica,sizeof(int));
 	if (err_list==NULL) {
 		return -ENOMEM;
 	}
 
-	for(i=0;i<max_replica;++i) {
+	for(i=0;i<config.max_replica;++i) {
 		replica = choose_replica(i);
-		if ((tab_fd.fd[fi->fh][replica]>0) && (!paths[replica].disabled)) {
-			perm = get_rights_by_fd(tab_fd.fd[fi->fh][replica]);
+		if ((config.tab_fd.fd[fi->fh][replica]>0) && (!config.replicas[replica].disabled)) {
+			perm = get_rights_by_fd(config.tab_fd.fd[fi->fh][replica]);
 			if (perm<0) {
 				err_list[replica] = errno;
 				fail_cnt++;
@@ -642,12 +692,12 @@ static int chiron_read(const char *path, char *buf, size_t size,
 					free(err_list);
 					return(-EACCES);
 				}
-				r = pread(tab_fd.fd[fi->fh][replica],buf,size,offset);
+				r = pread(config.tab_fd.fd[fi->fh][replica],buf,size,offset);
 				if (r>=0) {
 					if (fail_cnt) {
-						for(i=0;i<max_replica;++i) {
+						for(i=0;i<config.max_replica;++i) {
 							if (err_list[i]) {
-								call_log("read",paths[i].path,err_list[i]);
+								_log("read",config.replicas[i].path,err_list[i]);
 							}
 						}
 					}
@@ -663,12 +713,12 @@ static int chiron_read(const char *path, char *buf, size_t size,
 
 	gettmday(&t2,NULL);
 	timeval_subtract(&t3,&t2,&t1);
-	dbg("\nread time %ld secs,  %ld usecs",t3.tv_sec,t3.tv_usec);
+	dbg("read time %ld secs,  %ld usecs\n",t3.tv_sec,t3.tv_usec);
 
-	for(i=(max_replica-1);i>=0;--i) {
-		if (!paths[i].disabled) {
+	for(i=(config.max_replica-1);i>=0;--i) {
+		if (!config.replicas[i].disabled) {
 			if (err_list[i]) {
-				dbg("\nretval: %d,%d,%d\n",-err_list[i],err_list[i],i);
+				dbg("retval: %d,%d,%d\n",-err_list[i],err_list[i],i);
 				errno = err_list[i];
 			}
 		}
@@ -688,26 +738,26 @@ static int chiron_write(const char *path, const char *buf, size_t size,
 	gettmday(&t1,NULL);
 	(void) path;
 
-	dbg("write(%d)",fi->fh);
-	if (tab_fd.fd[fi->fh]==NULL) {
+	dbg("\n@write %#lx\n", fi->fh);
+	if (config.tab_fd.fd[fi->fh]==NULL) {
 		return(-EINVAL);
 	}
 
-	w = calloc(max_replica,sizeof(ssize_t));
+	w = calloc(config.max_replica,sizeof(ssize_t));
 	if (w==NULL) {
 		print_err(CHIRONFS_ERR_LOW_MEMORY,"replica return code table allocation");
 		return(-ENOMEM);
 	}
-	err_list = calloc(max_replica,sizeof(int));
+	err_list = calloc(config.max_replica,sizeof(int));
 	if (err_list==NULL) {
 		free(w);
 		print_err(CHIRONFS_ERR_LOW_MEMORY,"replica error code table allocation");
 		return(-ENOMEM);
 	}
-	for(i=0;i<max_replica;++i) {
-		if (!paths[i].disabled) {
-			if (tab_fd.fd[fi->fh][i]>0) {
-				perm = get_rights_by_fd(tab_fd.fd[fi->fh][i]);
+	for(i=0;i<config.max_replica;++i) {
+		if (!config.replicas[i].disabled) {
+			if (config.tab_fd.fd[fi->fh][i]>0) {
+				perm = get_rights_by_fd(config.tab_fd.fd[fi->fh][i]);
 				if (perm<0) {
 					err_list[i] = errno;
 					fail_cnt++;
@@ -716,7 +766,7 @@ static int chiron_write(const char *path, const char *buf, size_t size,
 						err_list[i] = EACCES;
 						fail_cnt++;
 					} else {
-						w[i] = pwrite(tab_fd.fd[fi->fh][i],buf,size,offset);
+						w[i] = pwrite(config.tab_fd.fd[fi->fh][i],buf,size,offset);
 						if (w[i]<0) {
 							err_list[i] = errno;
 							fail_cnt++;
@@ -730,10 +780,10 @@ static int chiron_write(const char *path, const char *buf, size_t size,
 	}
 
 	if (fail_cnt && succ_cnt) {
-		for(i=0;i<max_replica;++i) {
-			if (!paths[i].disabled) {
+		for(i=0;i<config.max_replica;++i) {
+			if (!config.replicas[i].disabled) {
 				if (w[i]<0) {
-					call_log("write",paths[i].path,err_list[i]);
+					_log("write",config.replicas[i].path,err_list[i]);
 					disable_replica(i);
 				}
 			}
@@ -741,8 +791,8 @@ static int chiron_write(const char *path, const char *buf, size_t size,
 	}
 
 	if (succ_cnt) {
-		for(i=0;i<max_replica;++i) {
-			if (!paths[i].disabled) {
+		for(i=0;i<config.max_replica;++i) {
+			if (!config.replicas[i].disabled) {
 				if (w[i]>=0) {
 					ret = w[i];
 					free( w );
@@ -755,7 +805,7 @@ static int chiron_write(const char *path, const char *buf, size_t size,
 
 	gettmday(&t2,NULL);
 	timeval_subtract(&t3,&t2,&t1);
-	dbg("\nwrite total time %ld secs,  %ld usecs",t3.tv_sec,t3.tv_usec);
+	dbg("write total time %ld secs, %ld usecs\n",t3.tv_sec,t3.tv_usec);
 
 	free( w );
 	free(err_list);
@@ -768,15 +818,15 @@ int i=0, st=-1, einval=0, qterr=0, staterr=0, replica;      \
 int *err_list, perm;                                        \
 decl_tmvar(t1, t2, t3);                                     \
 gettmday(&t1,NULL);                                         \
-err_list = calloc(max_replica,sizeof(int));                 \
+err_list = calloc(config.max_replica,sizeof(int));                 \
 if (err_list==NULL) {                                       \
 	return -ENOMEM;                                          \
 }                                                           \
 do {                                                        \
 	replica = choose_replica(i);                             \
-	if (!paths[replica].disabled) {                          \
-		fname = xlate(path,paths[replica].path);              \
-		if (fname!=NULL) {                                    \
+	if (!config.replicas[replica].disabled) {                          \
+		fname = xlate(path,config.replicas[replica].path);              \
+		if (fname) {                                    \
 			perm = check_may_enter(fname);                     \
 			if (perm<0) {                                      \
 				qterr++;                                        \
@@ -792,15 +842,15 @@ do {                                                        \
 					free(fname);                                 \
 				} else {                                        \
 					if (qterr) {                                 \
-						for(i=0;i<max_replica;++i) {              \
+						for(i=0;i<config.max_replica;++i) {              \
 							if (err_list[i]) {                     \
-								call_log(logmsgstr,paths[i].path,err_list[i]);   \
+								_log(logmsgstr,config.replicas[i].path,err_list[i]);   \
 							}                                      \
 						}                                         \
 					}                                            \
 					gettmday(&t2,NULL);                          \
 					timeval_subtract(&t3,&t2,&t1);               \
-					dbg("\n%s succ time %ld secs,  %ld usecs",logmsgstr,t3.tv_sec,t3.tv_usec);  \
+					dbg("%s succ time %ld secs,  %ld usecs\n",logmsgstr,t3.tv_sec,t3.tv_usec);  \
 					free(err_list);                              \
 					free(fname);                                 \
 					return(st);                                  \
@@ -811,10 +861,10 @@ do {                                                        \
 		}                                                     \
 	}                                                        \
 	++i;                                                     \
-} while ((st<0) && (i<max_replica));                        \
+} while ((st<0) && (i<config.max_replica));                        \
 gettmday(&t2,NULL);                                         \
 timeval_subtract(&t3,&t2,&t1);                              \
-dbg("\n%s fail time %ld secs,  %ld usecs",logmsgstr,t3.tv_sec,t3.tv_usec);  \
+dbg("%s fail time %ld secs, %ld usecs\n",logmsgstr,t3.tv_sec,t3.tv_usec);  \
 free(err_list);                                             \
 if (qterr) {                                                \
 	return(staterr);                                         \
@@ -824,13 +874,13 @@ return(-EINVAL);
 
 static int chiron_statfs(const char *path, struct statvfs *stbuf)
 {
-	dbg("\nstatfs: %s\n",path);
+	dbg("\n@statfs %s\n",path);
 	dodir_byname_ro(statvfs(fname, stbuf),"statfs"); // fs info->superblock
 }
 
 int chiron_getattr(const char *path, struct stat *stbuf)
 {
-	dbg("\ngetattr: %s\n",path);
+	dbg("\n@getattr %s\n",path);
 	dodir_byname_ro(lstat(fname, stbuf),"getattr");
 }
 
@@ -838,7 +888,7 @@ static int chiron_access(const char *path, int mask)
 {
 	int ret, perm;
 	struct stat stbuf;
-	dbg("\naccess: %s\n",path);
+	dbg("\n@access %s\n",path);
 	ret = chiron_getattr(path,&stbuf);
 
 	if (ret<0) {
@@ -862,14 +912,14 @@ int i=0, st=-1, einval=0, qterr=0, staterr=0, replica;   \
 int *err_list, perm;                                     \
 decl_tmvar(t1, t2, t3);                                  \
 gettmday(&t1,NULL);                                      \
-err_list = calloc(max_replica,sizeof(int));              \
+err_list = calloc(config.max_replica,sizeof(int));              \
 if (err_list==NULL) {                                    \
 	return -ENOMEM;                                       \
 }                                                        \
 do {                                                     \
 	replica = choose_replica(i);                          \
-	if (!paths[replica].disabled) {                       \
-		fname = xlate(path,paths[replica].path);           \
+	if (!config.replicas[replica].disabled) {                       \
+		fname = xlate(path,config.replicas[replica].path);           \
 		if (fname!=NULL) {                                 \
 			perm = get_rights_by_name(fname);               \
 			if (perm<0) {                                   \
@@ -890,15 +940,15 @@ do {                                                     \
 						err_list[replica] = errno;             \
 					} else {                                  \
 						if (qterr) {                           \
-							for(i=0;i<max_replica;++i) {        \
+							for(i=0;i<config.max_replica;++i) {        \
 								if (err_list[i]) {               \
-									call_log(logmsgstr,paths[i].path,err_list[i]);  \
+									_log(logmsgstr,config.replicas[i].path,err_list[i]);  \
 								}                                \
 							}                                   \
 						}                                      \
 						gettmday(&t2,NULL);                    \
 						timeval_subtract(&t3,&t2,&t1);         \
-						dbg("\n%s succ time %ld secs,  %ld usecs",logmsgstr,t3.tv_sec,t3.tv_usec); \
+						dbg("%s succ time %ld secs, %ld usecs\n",logmsgstr,t3.tv_sec,t3.tv_usec); \
 						free(err_list);                        \
 						free(fname);                           \
 						return(st);                            \
@@ -911,10 +961,10 @@ do {                                                     \
 		}                                                  \
 	}                                                     \
 	++i;                                                  \
-} while ((st<0) && (i<max_replica));                     \
+} while ((st<0) && (i<config.max_replica));                     \
 gettmday(&t2,NULL);                                      \
 timeval_subtract(&t3,&t2,&t1);                           \
-dbg("\n%s fail time %ld secs,  %ld usecs",logmsgstr,t3.tv_sec,t3.tv_usec); \
+dbg("%s fail time %ld secs, %ld usecs\n",logmsgstr,t3.tv_sec,t3.tv_usec); \
 free(err_list);                                          \
 if (qterr) {                                             \
 	return(staterr);                                      \
@@ -932,7 +982,7 @@ return(-EINVAL)
  */
 static int chiron_readlink(const char *path, char *buf, size_t size)
 {
-	dbg("\nreadlink: %s\n",path);
+	dbg("\n@readlink %s\n",path);
 
 	//   do_byname_ro(readlink(fname, buf, size));
 	char *fname;
@@ -942,15 +992,15 @@ static int chiron_readlink(const char *path, char *buf, size_t size)
 
 	gettmday(&t1,NULL);
 
-	err_list = calloc(max_replica,sizeof(int));
+	err_list = calloc(config.max_replica,sizeof(int));
 	if (err_list==NULL) {
 		return -ENOMEM;
 	}
 
 	do {
 		replica = choose_replica(i);
-		if (!paths[replica].disabled) {
-			fname = xlate(path,paths[replica].path);
+		if (!config.replicas[replica].disabled) {
+			fname = xlate(path,config.replicas[replica].path);
 			if (fname!=NULL) {
 				perm = get_rights_by_name_l(fname);
 				if (perm<0) {
@@ -972,16 +1022,16 @@ static int chiron_readlink(const char *path, char *buf, size_t size)
 						err_list[replica] = errno;
 					} else {
 						if (qterr) {
-							for(i=0;i<max_replica;++i) {
+							for(i=0;i<config.max_replica;++i) {
 								if (err_list[i]) {
-									call_log("readlink",paths[i].path,err_list[i]);
+									_log("readlink",config.replicas[i].path,err_list[i]);
 								}
 							}
 						}
 						free(err_list);
 						gettmday(&t2,NULL);
 						timeval_subtract(&t3,&t2,&t1);
-						dbg("\nreadlink succ time %ld secs,  %ld usecs",t3.tv_sec,t3.tv_usec);
+						dbg("readlink succ time %ld secs, %ld usecs\n",t3.tv_sec,t3.tv_usec);
 						buf[st] = 0;
 						return(0);
 					}
@@ -991,12 +1041,12 @@ static int chiron_readlink(const char *path, char *buf, size_t size)
 			}
 		}
 		++i;
-	} while ((st<0) && (i<max_replica));
+	} while ((st<0) && (i<config.max_replica));
 	free(err_list);
 
 	gettmday(&t2,NULL);
 	timeval_subtract(&t3,&t2,&t1);
-	dbg("\nreadlink fail time %ld secs,  %ld usecs",t3.tv_sec,t3.tv_usec);
+	dbg("readlink fail time %ld secs, %ld usecs\n",t3.tv_sec,t3.tv_usec);
 
 	if (qterr) {
 		return(staterr);
@@ -1019,17 +1069,17 @@ static int chiron_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 	//   (void) offset;
 	(void) fi;
-	dbg("\nreaddir: %s, offset: %ld\n",path,offset);
+	dbg("\n@readdir %s offset=%ld\n",path,offset);
 
-	err_list = calloc(max_replica,sizeof(int));
+	err_list = calloc(config.max_replica,sizeof(int));
 	if (err_list==NULL) {
 		return -ENOMEM;
 	}
 
 	do {
 		replica = choose_replica(i);
-		if (!paths[replica].disabled) {
-			fname   = xlate(path,paths[replica].path);
+		if (!config.replicas[replica].disabled) {
+			fname   = xlate(path,config.replicas[replica].path);
 			if (fname!=NULL) {
 				perm = get_rights_by_name(fname);
 				if (perm<0) {
@@ -1055,13 +1105,13 @@ static int chiron_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			}
 		}
 		++i;
-	} while ((dp==NULL) && (i<max_replica));
+	} while ((dp==NULL) && (i<config.max_replica));
 
 
 	if (dp==NULL) {
 		gettmday(&t2,NULL);
 		timeval_subtract(&t3,&t2,&t1);
-		dbg("\nreaddir fail time %ld secs,  %ld usecs",t3.tv_sec,t3.tv_usec);
+		dbg("readdir fail time %ld secs, %ld usecs\n",t3.tv_sec,t3.tv_usec);
 
 		free(err_list);
 		if (qterr) {
@@ -1072,9 +1122,9 @@ static int chiron_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 
 	if (qterr) {
-		for(i=0;i<max_replica;++i) {
+		for(i=0;i<config.max_replica;++i) {
 			if (err_list[i]) {
-				call_log("readdir",paths[i].path,err_list[i]);
+				_log("readdir",config.replicas[i].path,err_list[i]);
 			}
 		}
 	}
@@ -1094,7 +1144,7 @@ static int chiron_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 	gettmday(&t2,NULL);
 	timeval_subtract(&t3,&t2,&t1);
-	dbg("\nreaddir succ time %ld secs,  %ld usecs",t3.tv_sec,t3.tv_usec);
+	dbg("readdir succ time %ld secs, %ld usecs\n",t3.tv_sec,t3.tv_usec);
 
 	return 0;
 }
@@ -1111,13 +1161,13 @@ static int chiron_mknod(const char *path_orig, mode_t mode, dev_t rdev)
 
 	gettmday(&t1,NULL);
 
-	dbg("\nmknod@: %s\n",path_orig);
-	fd = calloc(max_replica,sizeof(int));
+	dbg("\n@mknod %s\n", path_orig);
+	fd = calloc(config.max_replica,sizeof(int));
 	if (fd==NULL) {
 		return -ENOMEM;
 	}
 
-	err_list = calloc(max_replica,sizeof(int));
+	err_list = calloc(config.max_replica,sizeof(int));
 	if (err_list==NULL) {
 		free(fd);
 		return -ENOMEM;
@@ -1126,9 +1176,9 @@ static int chiron_mknod(const char *path_orig, mode_t mode, dev_t rdev)
 	path = strdup(path_orig);
 
 	if (path!=NULL) {
-		for(i=(max_replica-1);i>=0;--i) {
-			if (!paths[i].disabled) {
-				fname = xlate(path,paths[i].path);
+		for(i=(config.max_replica-1);i>=0;--i) {
+			if (!config.replicas[i].disabled) {
+				fname = xlate(path,config.replicas[i].path);
 				if (fname!=NULL) {
 					dname = strdup(fname);
 					if (dname==NULL) {
@@ -1159,7 +1209,7 @@ static int chiron_mknod(const char *path_orig, mode_t mode, dev_t rdev)
 								} else {
 									succ_cnt++;
 								}
-								dbg("\nmknod/open+chown: %s\n",path_orig);
+								dbg("mknod/open+chown: %s\n",path_orig);
 							} else {
 								err_list[i] = errno;
 								fail_cnt++;
@@ -1185,7 +1235,7 @@ static int chiron_mknod(const char *path_orig, mode_t mode, dev_t rdev)
 								} else {
 									succ_cnt++;
 								}
-								dbg("\nmknod/fifo/nod+chown: %s\n",path_orig);
+								dbg("mknod/fifo/nod+chown: %s\n",path_orig);
 							} else {
 								err_list[i] = errno;
 								fail_cnt++;
@@ -1199,13 +1249,13 @@ static int chiron_mknod(const char *path_orig, mode_t mode, dev_t rdev)
 		free(path);
 
 		if (fail_cnt && succ_cnt) {
-			for(i=0;i<max_replica;++i) {
-				if (!paths[i].disabled) {
+			for(i=0;i<config.max_replica;++i) {
+				if (!config.replicas[i].disabled) {
 					if (fd[i]<0) {
 						if (err_list[i]<0) {
-							call_log("mknod+chown",paths[i].path,-err_list[i]);
+							_log("mknod+chown",config.replicas[i].path,-err_list[i]);
 						} else {
-							call_log("mknod",paths[i].path,err_list[i]);
+							_log("mknod",config.replicas[i].path,err_list[i]);
 						}
 						disable_replica(i);
 					}
@@ -1215,20 +1265,20 @@ static int chiron_mknod(const char *path_orig, mode_t mode, dev_t rdev)
 
 		gettmday(&t2,NULL);
 		timeval_subtract(&t3,&t2,&t1);
-		dbg("\nmknod time %ld secs,  %ld usecs",t3.tv_sec,t3.tv_usec);
+		dbg("mknod time %ld secs, %ld usecs\n",t3.tv_sec,t3.tv_usec);
 
 		if (succ_cnt) {
-			dbg("\nmknod nofail");
+			dbg("mknod nofail\n");
 			free( fd );             /* Thanks to Patrick Prasse for send this patch line fixing a memory leak */
 			free(err_list);
 
 			return(0);
 		}
-		dbg("\nmknod fail0");
-		for(i=(max_replica-1);i>=0;--i) {
-			if (!paths[i].disabled) {
+		dbg("mknod fail0\n");
+		for(i=(config.max_replica-1);i>=0;--i) {
+			if (!config.replicas[i].disabled) {
 				if (err_list[i]) {
-					dbg("\nretval: %d,%d,%d\n",-err_list[i],err_list[i],i);
+					dbg("retval: %d,%d,%d\n",-err_list[i],err_list[i],i);
 					errno = err_list[i];
 				}
 			}
@@ -1237,7 +1287,7 @@ static int chiron_mknod(const char *path_orig, mode_t mode, dev_t rdev)
 		errno = ENOMEM;
 	}
 
-	dbg("\nmknod fail1");
+	dbg("mknod fail1\n");
 	free( fd );               /* Thanks to Patrick Prasse for send this patch line fixing a memory leak */
 	free(err_list);
 	return -errno;
@@ -1251,44 +1301,44 @@ int     fail_cnt=0, succ_cnt=0;                                                 
 int    *err_list, perm;                                                                     \
 decl_tmvar(t1, t2, t3);                                                                     \
 gettmday(&t1,NULL);                                                                         \
-fd = calloc(max_replica,sizeof(int));                                                       \
+fd = calloc(config.max_replica,sizeof(int));                                                       \
 if (fd==NULL) {                                                                             \
 	return -ENOMEM;                                                                          \
 }                                                                                           \
-err_list = calloc(max_replica,sizeof(int));                                                 \
+err_list = calloc(config.max_replica,sizeof(int));                                                 \
 if (err_list==NULL) {                                                                       \
 	free(fd);                                                                                \
 	return -ENOMEM;                                                                          \
 }                                                                                           \
-for(i=0;i<max_replica;++i) {                                                                \
+for(i=0;i<config.max_replica;++i) {                                                                \
 	err_list[i] = 0;                                                                         \
 }                                                                                           \
 path = strdup(path_orig);                                                                   \
 if (path!=NULL) {                                                                           \
-	for(i=(max_replica-1);i>=0;--i) {                                                        \
-		if (!paths[i].disabled) {                                                             \
-			fname = xlate(path,paths[i].path);                                                 \
+	for(i=(config.max_replica-1);i>=0;--i) {                                                        \
+		if (!config.replicas[i].disabled) {                                                             \
+			fname = xlate(path,config.replicas[i].path);                                                 \
 			if (fname!=NULL) {                                                                 \
 				perm = perm_check;                                                              \
 				if (perm<0) {                                                                   \
 					err_list[i] = errno;                                                         \
 					fail_cnt++;                                                                  \
-					dbg("\n%s try %d, errno: %d, perm: %x\n",logmsgstr,i,errno,perm);          \
+					dbg("%s try %d, errno: %d, perm: %x\n",logmsgstr,i,errno,perm);          \
 				} else if ((!(perm&2)) permop (restrict)) {                                     \
 					err_list[i] = nerrno;                                                        \
 					fail_cnt++;                                                                  \
-					dbg("\n%s try %d, errno: %d, perm: %x\n",logmsgstr,i,nerrno,perm);         \
+					dbg("%s try %d, errno: %d, perm: %x\n",logmsgstr,i,nerrno,perm);         \
 				} else {                                                                        \
 					fd[i] = fn;                                                                  \
 					free(fname);                                                                 \
 					if (fd[i]==0) {                                                              \
 						succ_cnt++;                                                               \
 						err_list[i] = 0;                                                          \
-						dbg("\n%s succ %d, perm: %x\n",logmsgstr,i,perm);                          \
+						dbg("%s succ %d, perm: %x\n",logmsgstr,i,perm);                          \
 					} else {                                                                     \
 						err_list[i] = errno;                                                      \
 						fail_cnt++;                                                               \
-						dbg("\n%s try %d, errno: %d, perm: %x\n",logmsgstr,i,errno,perm);          \
+						dbg("%s try %d, errno: %d, perm: %x\n",logmsgstr,i,errno,perm);          \
 					}                                                                            \
 				}                                                                               \
 			}                                                                                  \
@@ -1296,19 +1346,19 @@ if (path!=NULL) {                                                               
 	}                                                                                        \
 	free(path);                                                                              \
 	if (fail_cnt && succ_cnt) {                                                              \
-		for(i=0;i<max_replica;++i) {                                                          \
-			if (!paths[i].disabled) {                                                          \
+		for(i=0;i<config.max_replica;++i) {                                                          \
+			if (!config.replicas[i].disabled) {                                                          \
 				if (fd[i]<0) {                                                                  \
-					call_log(logmsgstr,paths[i].path,err_list[i]);                               \
+					_log(logmsgstr,config.replicas[i].path,err_list[i]);                               \
 					disable_replica(i);                                                          \
 				}                                                                               \
 			}                                                                                  \
 		}                                                                                     \
 	}                                                                                        \
-	for(i=(max_replica-1);i>=0;--i) {                                                        \
-		if (!paths[i].disabled) {                                                             \
+	for(i=(config.max_replica-1);i>=0;--i) {                                                        \
+		if (!config.replicas[i].disabled) {                                                             \
 			if (err_list[i]) {                                                                 \
-				dbg("\nretval: %d,%d,%d\n",-err_list[i],err_list[i],i);                       \
+				dbg("retval: %d,%d,%d\n",-err_list[i],err_list[i],i);                       \
 				return(-err_list[i]);                                                           \
 			}                                                                                  \
 		}                                                                                     \
@@ -1317,7 +1367,7 @@ if (path!=NULL) {                                                               
 	free( err_list );                                                                        \
 	gettmday(&t2,NULL);                                                                      \
 	timeval_subtract(&t3,&t2,&t1);                                                           \
-	dbg("\n%s time %ld secs,  %ld usecs",logmsgstr,t3.tv_sec,t3.tv_usec);                  \
+	dbg("%s time %ld secs, %ld usecs\n",logmsgstr,t3.tv_sec,t3.tv_usec);                  \
 	if (succ_cnt) {                                                                          \
 		return(0);                                                                            \
 	}                                                                                        \
@@ -1327,13 +1377,13 @@ free( fd ); /* Thanks to Patrick Prasse for send this patch line fixing a memory
 free( err_list );                                                                           \
 gettmday(&t2,NULL);                                                                         \
 timeval_subtract(&t3,&t2,&t1);                                                              \
-dbg("\n%s allocfail time %ld secs,  %ld usecs",logmsgstr,t3.tv_sec,t3.tv_usec);           \
+dbg("%s allocfail time %ld secs, %ld usecs\n",logmsgstr,t3.tv_sec,t3.tv_usec);           \
 return -ENOMEM
 
 
 static int chiron_truncate(const char *path_orig, off_t size)
 {
-	dbg("\ntruncate: %s\n",path_orig);
+	dbg("@truncate %s\n",path_orig);
 	do_byname_rw(truncate(fname, size), "truncate",get_rights_by_name(fname),||,0,EACCES);
 }
 
@@ -1344,11 +1394,11 @@ static int chiron_chmod(const char *path_orig, mode_t mode)
 	int st;
 
 	context = fuse_get_context();
+	dbg("@chmod %s\n",path_orig);
 
 	if ((st=chiron_getattr(path_orig, &stbuf))<0) {
 		return(st);
 	}
-	dbg("\nchmod: %s\n",path_orig);
 	do_byname_rw(chmod(fname, mode), "chmod",2,||,(
 						       // deny if user is not privileged neither the owner
 						       (context->uid && (stbuf.st_uid!=context->uid))
@@ -1366,7 +1416,7 @@ static int chiron_chown(const char *path_orig, uid_t uid, gid_t gid)
 	if ((st=chiron_getattr(path_orig, &stbuf))<0) {
 		return(st);
 	}
-	dbg("\nchown: %s\n",path_orig);
+	dbg("\n@chown %s\n",path_orig);
 	do_byname_rw(lchown(fname, uid, gid), "chown",get_rights_by_name(fname),||,(
 										    // deny if system is restricted user is not privileged and is trying to change the owner
 										    (_POSIX_CHOWN_RESTRICTED && context->uid && (stbuf.st_uid!=uid))
@@ -1390,7 +1440,7 @@ static int chiron_utime(const char *path_orig, struct utimbuf *buf)
 	if ((st=chiron_getattr(path_orig, &stbuf))<0) {
 		return(st);
 	}
-	dbg("\nutime: %s\n",path_orig);
+	dbg("\n@utime %s\n",path_orig);
 	do_byname_rw(utime(fname, buf), "utime",get_rights_by_name(fname),&&,(
 									      // deny if doesn't happens that buf==NULL and user is not privileged neither the owner
 									      (
@@ -1405,7 +1455,7 @@ static int chiron_rmdir(const char *path_orig)
 {
 	char *dname;
 	int tmpperm;
-	dbg("\nrmdir: %s\n",path_orig);
+	dbg("\n@rmdir %s\n",path_orig);
 	do_byname_rw(rmdir(fname), "rmdir",(
 					    ((dname=strdup(fname))==NULL)
 					    ? ( errno = ENOMEM, -1 )
@@ -1417,7 +1467,7 @@ static int chiron_unlink(const char *path_orig)
 {
 	char *dname;
 	int tmpperm;
-	dbg("\nunlink: %s\n",path_orig);
+	dbg("\n@unlink %s\n",path_orig);
 	do_byname_rw(unlink(fname), "unlink",(
 					      ((dname=strdup(fname))==NULL)
 					      ? ( errno = ENOMEM, -1 )
@@ -1427,7 +1477,6 @@ static int chiron_unlink(const char *path_orig)
 
 int chiron_mkdir(const char *path_orig, mode_t mode)
 {
-	dbg("\nmkdir: %s\n",path_orig);
 	char   *fname, *path, *slash, *dname;
 	int     i, *fd;
 	int     fail_cnt=0, succ_cnt=0, dir_stat;
@@ -1435,26 +1484,28 @@ int chiron_mkdir(const char *path_orig, mode_t mode)
 	unsigned int gid;
 	static struct fuse_context *context;
 	struct stat stbuf;
+	dbg("\n@mkdir %s\n",path_orig);
+
 	decl_tmvar(t1, t2, t3);
 
 	gettmday(&t1,NULL);
 
 	context = fuse_get_context();
 
-	fd = calloc(max_replica,sizeof(int));
+	fd = calloc(config.max_replica,sizeof(int));
 	if (fd==NULL) {
 		return -ENOMEM;
 	}
-	err_list = calloc(max_replica,sizeof(int));
+	err_list = calloc(config.max_replica,sizeof(int));
 	if (err_list==NULL) {
 		free(fd);
 		return -ENOMEM;
 	}
 	path = strdup(path_orig);
 	if (path!=NULL) {
-		for(i=(max_replica-1);i>=0;--i) {
-			if (!paths[i].disabled) {
-				fname = xlate(path,paths[i].path);
+		for(i=(config.max_replica-1);i>=0;--i) {
+			if (!config.replicas[i].disabled) {
+				fname = xlate(path,config.replicas[i].path);
 				if (fname!=NULL) {
 					dname = strdup(fname);
 					if (dname==NULL) {
@@ -1494,13 +1545,13 @@ int chiron_mkdir(const char *path_orig, mode_t mode)
 		}
 		free(path);
 		if (fail_cnt && succ_cnt) {
-			for(i=0;i<max_replica;++i) {
-				if (!paths[i].disabled) {
+			for(i=0;i<config.max_replica;++i) {
+				if (!config.replicas[i].disabled) {
 					if (fd[i]<0) {
 						if (err_list[i]<0) {
-							call_log("mkdir+chown",paths[i].path,-err_list[i]);
+							_log("mkdir+chown",config.replicas[i].path,-err_list[i]);
 						} else {
-							call_log("mkdir",paths[i].path,err_list[i]);
+							_log("mkdir",config.replicas[i].path,err_list[i]);
 						}
 						disable_replica(i);
 					}
@@ -1510,17 +1561,17 @@ int chiron_mkdir(const char *path_orig, mode_t mode)
 
 		gettmday(&t2,NULL);
 		timeval_subtract(&t3,&t2,&t1);
-		dbg("\nmkdir time %ld secs,  %ld usecs",t3.tv_sec,t3.tv_usec);
+		dbg("mkdir time %ld secs, %ld usecs\n",t3.tv_sec,t3.tv_usec);
 
 		if (succ_cnt) {
 			free( fd ); /* Thanks to Patrick Prasse for send this patch line fixing a memory leak */
 			free( err_list );
 			return(0);
 		}
-		for(i=(max_replica-1);i>=0;--i) {
-			if (!paths[i].disabled) {
+		for(i=(config.max_replica-1);i>=0;--i) {
+			if (!config.replicas[i].disabled) {
 				if (err_list[i]) {
-					dbg("\nretval: %d,%d,%d\n",-err_list[i],err_list[i],i);
+					dbg("retval: %d,%d,%d\n",-err_list[i],err_list[i],i);
 					errno = err_list[i];
 				}
 			}
@@ -1533,7 +1584,7 @@ int chiron_mkdir(const char *path_orig, mode_t mode)
 
 	gettmday(&t2,NULL);
 	timeval_subtract(&t3,&t2,&t1);
-	dbg("\nmkdir alloc fail time %ld secs,  %ld usecs",t3.tv_sec,t3.tv_usec);
+	dbg("mkdir alloc fail time %ld secs, %ld usecs\n",t3.tv_sec,t3.tv_usec);
 
 	return -errno;
 
@@ -1550,23 +1601,23 @@ static int chiron_symlink(const char *from, const char *to)
 
 	gettmday(&t1,NULL);
 
-	dbg("\nsymlink: %s->%s\n",from,to);
+	dbg("\n@symlink %s->%s\n", from, to);
 	context = fuse_get_context();
-	fd = calloc(max_replica,sizeof(int));
+	fd = calloc(config.max_replica,sizeof(int));
 	if (fd==NULL) {
 		return -ENOMEM;
 	}
 
-	err_list = calloc(max_replica,sizeof(int));
+	err_list = calloc(config.max_replica,sizeof(int));
 	if (err_list==NULL) {
 		free(fd);
 		return -ENOMEM;
 	}
 
-	for(i=(max_replica-1);i>=0;--i) {
-		if (!paths[i].disabled) {
+	for(i=(config.max_replica-1);i>=0;--i) {
+		if (!config.replicas[i].disabled) {
 			fd[i] = 0;
-			fname = xlate(to,paths[i].path);
+			fname = xlate(to,config.replicas[i].path);
 			if (fname!=NULL) {
 				dname = strdup(fname);
 				if (dname==NULL) {
@@ -1606,13 +1657,13 @@ static int chiron_symlink(const char *from, const char *to)
 	}
 
 	if (fail_cnt && succ_cnt) {
-		for(i=0;i<max_replica;++i) {
-			if (!paths[i].disabled) {
+		for(i=0;i<config.max_replica;++i) {
+			if (!config.replicas[i].disabled) {
 				if (fd[i]<0) {
 					if (err_list[i]<0) {
-						call_log("symlink+chown",paths[i].path,-err_list[i]);
+						_log("symlink+chown",config.replicas[i].path,-err_list[i]);
 					} else {
-						call_log("symlink",paths[i].path,err_list[i]);
+						_log("symlink",config.replicas[i].path,err_list[i]);
 					}
 					disable_replica(i);
 				}
@@ -1620,10 +1671,10 @@ static int chiron_symlink(const char *from, const char *to)
 		}
 	}
 
-	for(i=(max_replica-1);i>=0;--i) {
-		if (!paths[i].disabled) {
+	for(i=(config.max_replica-1);i>=0;--i) {
+		if (!config.replicas[i].disabled) {
 			if (err_list[i]) {
-				dbg("\nretval: %d,%d,%d\n",-err_list[i],err_list[i],i);
+				dbg("retval: %d,%d,%d\n",-err_list[i],err_list[i],i);
 				errno = err_list[i];
 			}
 		}
@@ -1634,7 +1685,7 @@ static int chiron_symlink(const char *from, const char *to)
 
 	gettmday(&t2,NULL);
 	timeval_subtract(&t3,&t2,&t1);
-	dbg("\nsymlink time %ld secs,  %ld usecs",t3.tv_sec,t3.tv_usec);
+	dbg("symlink time %ld secs, %ld usecs\n",t3.tv_sec,t3.tv_usec);
 
 	if (succ_cnt) {
 		return(0);
@@ -1648,14 +1699,14 @@ static int chiron_symlink(const char *from, const char *to)
 int     i, *fd, fail_cnt=0, succ_cnt=0, perm;                           \
 decl_tmvar(t1, t2, t3);                                                 \
 gettmday(&t1,NULL);                                                     \
-fd = calloc(max_replica,sizeof(int));                                   \
+fd = calloc(config.max_replica,sizeof(int));                                   \
 if (fd==NULL) {                                                         \
 	return -ENOMEM;                                                      \
 }                                                                       \
-for(i=(max_replica-1);i>=0;--i) {                                       \
-	if (!paths[i].disabled) {                                            \
+for(i=(config.max_replica-1);i>=0;--i) {                                       \
+	if (!config.replicas[i].disabled) {                                            \
 		fd[i] = 0;                                                        \
-		fname_from = xlate(from,paths[i].path);                           \
+		fname_from = xlate(from,config.replicas[i].path);                           \
 		if (fname_from==NULL) {                                           \
 			perm  = -1;                                                    \
 			errno = -ENOMEM;                                               \
@@ -1672,13 +1723,13 @@ for(i=(max_replica-1);i>=0;--i) {                                       \
 		if (perm<0) {                                                     \
 			fd[i] = -errno;                                                \
 			fail_cnt++;                                                    \
-			dbg("\n1. %s try %d, errno: %d, perm: %x\n",logmsgstr,i,errno,perm);            \
+			dbg("1. %s try %d, errno: %d, perm: %x\n",logmsgstr,i,errno,perm);            \
 		} else if (((perm&perm_from)!=perm_from) && perm_from) {          \
 			fd[i] = -EACCES;                                               \
 			fail_cnt++;                                                    \
-			dbg("\n1. %s try %d, errno: %d, perm: %x\n",logmsgstr,i,EACCES,perm);           \
+			dbg("1. %s try %d, errno: %d, perm: %x\n",logmsgstr,i,EACCES,perm);           \
 		} else {                                                          \
-			fname_to = xlate(to,paths[i].path);                            \
+			fname_to = xlate(to,config.replicas[i].path);                            \
 			if (fname_to==NULL) {                                          \
 				perm  = -1;                                                 \
 				errno = -ENOMEM;                                            \
@@ -1695,20 +1746,20 @@ for(i=(max_replica-1);i>=0;--i) {                                       \
 			if (perm<0) {                                                  \
 				fd[i] = -errno;                                             \
 				fail_cnt++;                                                 \
-				dbg("\n2. %s try %d, errno: %d, perm: %x\n",logmsgstr,i,errno,perm);            \
+				dbg("2. %s try %d, errno: %d, perm: %x\n",logmsgstr,i,errno,perm);            \
 			} else if ((perm&3)!=3) {                                        \
 				fd[i] = -EACCES;                                            \
 				fail_cnt++;                                                 \
-				dbg("\n2. %s try %d, errno: %d, perm: %x\n",logmsgstr,i,EACCES,perm);           \
+				dbg("2. %s try %d, errno: %d, perm: %x\n",logmsgstr,i,EACCES,perm);           \
 			} else {                                                       \
 				fd[i] = fn;                                                 \
 				if (fd[i]==0) {                                             \
 					succ_cnt++;                                              \
-					dbg("\n%s succ %d, perm: %x\n",logmsgstr,i,perm);                            \
+					dbg("%s succ %d, perm: %x\n",logmsgstr,i,perm);                            \
 				} else {                                                    \
 					fd[i] = -errno;                                          \
 					fail_cnt++;                                              \
-					dbg("\n%s try %d, errno: %d, perm: %x\n",logmsgstr,i,errno,perm);            \
+					dbg("%s try %d, errno: %d, perm: %x\n",logmsgstr,i,errno,perm);            \
 				}                                                           \
 			}                                                              \
 		}                                                                 \
@@ -1721,10 +1772,10 @@ for(i=(max_replica-1);i>=0;--i) {                                       \
 	}                                                                    \
 }                                                                       \
 if (fail_cnt && succ_cnt) {                                             \
-	for(i=0;i<max_replica;++i) {                                         \
-		if (!paths[i].disabled) {                                         \
+	for(i=0;i<config.max_replica;++i) {                                         \
+		if (!config.replicas[i].disabled) {                                         \
 			if (fd[i]<0) {                                                 \
-				call_log(logmsgstr,paths[i].path,-fd[i]);                   \
+				_log(logmsgstr,config.replicas[i].path,-fd[i]);                   \
 				disable_replica(i);                                         \
 			}                                                              \
 		}                                                                 \
@@ -1732,15 +1783,15 @@ if (fail_cnt && succ_cnt) {                                             \
 }                                                                       \
 gettmday(&t2,NULL);                                                     \
 timeval_subtract(&t3,&t2,&t1);                                          \
-dbg("\n%s time %ld secs,  %ld usecs",logmsgstr,t3.tv_sec,t3.tv_usec); \
+dbg("%s time %ld secs, %ld usecs\n",logmsgstr,t3.tv_sec,t3.tv_usec); \
 if (succ_cnt) {                                                         \
 	free( fd ); /* Thanks to Patrick Prasse for send this patch line fixing a memory leak */  \
 	return(0);                                                                                \
 }                                                                                            \
-for(i=(max_replica-1);i>=0;--i) {                                                            \
-	if (!paths[i].disabled) {                                                                 \
+for(i=(config.max_replica-1);i>=0;--i) {                                                            \
+	if (!config.replicas[i].disabled) {                                                                 \
 		if (fd[i]) {                                                                           \
-			dbg("\nretval: %d,%d,%d\n",-fd[i],fd[i],i);                                       \
+			dbg("retval: %d,%d,%d\n",-fd[i],fd[i],i);                                       \
 			errno = fd[i];                                                                      \
 		}                                                                                      \
 	}                                                                                         \
@@ -1756,14 +1807,14 @@ static int chiron_rename(const char *from, const char *to)
 	if ((st=chiron_getattr(from, &stbuf))<0) {
 		return(st);
 	}
-	dbg("\nrename: mode:%o\tdir:%d\n",stbuf.st_mode,S_ISDIR(stbuf.st_mode));
+	dbg("\n@rename %s->%s mode=%o dir=%d\n",from, to, stbuf.st_mode,S_ISDIR(stbuf.st_mode));
 	if (S_ISDIR(stbuf.st_mode)) {
-		dbg("\nrename: %s isdir\n",from);
+		dbg("rename: %s isdir\n",from);
 		dperm = get_rights_by_mode(stbuf);
 		if (dperm<0) {
 			return(-errno);
 		}
-		dbg("\nrename: fromperm=%x\n",dperm);
+		dbg("rename: fromperm=%x\n",dperm);
 		if (!(dperm&2)) {
 			return(-EACCES);
 		}
@@ -1771,24 +1822,23 @@ static int chiron_rename(const char *from, const char *to)
 
 	if ((st=chiron_getattr(to, &stbuf))>=0) {
 		if (S_ISDIR(stbuf.st_mode)) {
-			dbg("\nrename: %s isdir\n",to);
+			dbg("rename: %s isdir\n",to);
 			dperm = get_rights_by_mode(stbuf);
 			if (dperm<0) {
 				return(dperm);
 			}
-			dbg("\nrename: toperm=%x\n",dperm);
+			dbg("rename: toperm=%x\n",dperm);
 			if (!(dperm&2)) {
 				return(-EACCES);
 			}
 		}
 	}
-	dbg("\nrename: %s->%s\n",from,to);
 	do_by2names_rw(3,rename(fname_from, fname_to), "rename");
 }
 
 static int chiron_link(const char *from, const char *to)
 {
-	dbg("\nlink: %s->%s\n",from,to);
+	dbg("\n@link %s->%s\n", from, to);
 	do_by2names_rw(0,link(fname_from, fname_to), "link");
 }
 
@@ -1802,23 +1852,23 @@ static int chiron_fsync(const char *path, int isdatasync,
 	(void) path;
 	(void) isdatasync;
 	(void) fi;
-	dbg("\nfsync: %d\n",fi->fh);
+	dbg("\n@fsync %#lx\n",fi->fh);
 	/*
-	   if (tab_fd.fd[fi->fh]==NULL) {
+	   if (config.tab_fd.fd[fi->fh]==NULL) {
 	   return(-EINVAL);
 	   }
 
-	   fd = calloc(max_replica,sizeof(int));
+	   fd = calloc(config.max_replica,sizeof(int));
 	   if (fd==NULL) {
 	   return -ENOMEM;
 	   }
 
-	   for(i=(max_replica-1);i>=0;--i) {
-	   if (!paths[i].disabled) {
+	   for(i=(config.max_replica-1);i>=0;--i) {
+	   if (!config.replicas[i].disabled) {
 	   if (isdatasync) {
-	   fd[i] = fdatasync(tab_fd.fd[fi->fh][i]);
+	   fd[i] = fdatasync(config.tab_fd.fd[fi->fh][i]);
 	   } else {
-	   fd[i] = fsync(tab_fd.fd[fi->fh][i]);
+	   fd[i] = fsync(config.tab_fd.fd[fi->fh][i]);
 	   }
 	   if (fd[i]<0) {
 	   fd[i] = -errno;
@@ -1827,10 +1877,10 @@ static int chiron_fsync(const char *path, int isdatasync,
 	   }
 
 	   if (fail_cnt && succ_cnt) {
-	   for(i=0;i<max_replica;++i) {
-	   if (!paths[i].disabled) {
+	   for(i=0;i<config.max_replica;++i) {
+	   if (!config.replicas[i].disabled) {
 	   if (fd[i]<0) {
-	   call_log("fsync",paths[i].path,-fd[i]);
+	   _log("fsync",config.replicas[i].path,-fd[i]);
 	   disable_replica(i);
 	   }
 	   }
@@ -1868,19 +1918,20 @@ void *chiron_init()
 	pthread_t   thand;
 	int         i;
 
-	if (mount_ctl) {
+	if (config.chironctl_mountpoint) {
 		dbg("\nctl: struct stat initialized");
-		i = stat(chironctl_mountpoint,&st);
+		i = stat(config.chironctl_mountpoint,&st);
 		dbg("\nctl: getattr=%d",i);
 		if (i==ENOENT) {
 			dbg("\nctl: NOENT");
-			i = mkdir(chironctl_mountpoint,S_IFDIR | S_IRUSR | S_IXUSR);
+			i = mkdir(config.chironctl_mountpoint,
+				  S_IFDIR | S_IRUSR | S_IXUSR);
 			dbg("\nctl: mkdir=%d",i);
 		}
 
 		if (i) {
 			dbg("\nctl: nomkdir");
-			call_log("control directory",chironctl_mountpoint,-i);                   \
+			_log("control directory", config.chironctl_mountpoint, i);
 				return(NULL);
 		}
 
@@ -1889,7 +1940,7 @@ void *chiron_init()
 			return(NULL);
 		}
 	}
-	return(NULL);
+	return NULL;
 }
 
 
@@ -2013,7 +2064,6 @@ static int chiron_removexattr(const char *path, const char *name)
 static void chiron_destroy(void *notused)
 {
 	(void) notused;
-	free_paths();
 }
 
 void *start_ctl(void *arg)
@@ -2060,9 +2110,9 @@ void *start_ctl(void *arg)
 		}
 		// After forking, run the prog who implements the
 		// proc-like filesystem to control the main chironfs
-		dbg("\nchild: execing %s\n",ctlname);
-		execlp(ctlname,ctlname,NULL);
-		dbg("\nchild: failed execing %s error is %d\n",ctlname,errno);
+		dbg("\nchild: execing %s\n",config.chironctl_execname);
+		execlp(config.chironctl_execname,config.chironctl_execname,NULL);
+		dbg("\nchild: failed execing %s error is %d\n",config.chironctl_execname,errno);
 	} else if (pid<0) {
 		pthread_exit("error");
 	}
@@ -2082,13 +2132,13 @@ void *start_ctl(void *arg)
 		dbg("\nparent: got a msg %s\n",buf);
 		if (strncmp(buf,"stat:",5)==0) {
 			// status request
-			for(i=0;i<max_replica;++i) {
+			for(i=0;i<config.max_replica;++i) {
 				sscanf(buf+5,"%02X",&i);
-				if ((i>=0)&&(i<max_replica)) {
-					if (((int)paths[i].disabled)<2) {
-						fprintf(fo,"0001%1X",((int)paths[i].disabled)); // enabled, but untrusted
+				if ((i>=0)&&(i<config.max_replica)) {
+					if (((int)config.replicas[i].disabled)<2) {
+						fprintf(fo,"0001%1X",((int)config.replicas[i].disabled)); // enabled, but untrusted
 					} else {
-						//                  localtime_r(((time_t *)(&paths[i].disabled)),&t);
+						//                  localtime_r(((time_t *)(&config.replicas[i].disabled)),&t);
 						//                  fprintf(fo,"000E%04d%02d%02d%02d%02d%02d",t.tm_year+1900,t.tm_mon+1,t.tm_mday,t.tm_hour,t.tm_min,t.tm_sec); // disabled
 						fprintf(fo,"00012"); // disabled
 					}
@@ -2099,7 +2149,7 @@ void *start_ctl(void *arg)
 		} else if (strncmp(buf,"disable:",8)==0) {
 			// put replica in inactive state
 			sscanf(buf+8,"%2X",&i);
-			if ((i>=0)&&(i<max_replica)) {
+			if ((i>=0)&&(i<config.max_replica)) {
 				disable_replica(-i);
 				fprintf(fo,"0002OK");
 			} else {
@@ -2111,7 +2161,7 @@ void *start_ctl(void *arg)
 			// put replica in partial active state
 			// but do not trust it entirely
 			sscanf(buf+6,"%2X",&i);
-			if ((i>=0)&&(i<max_replica)) {
+			if ((i>=0)&&(i<config.max_replica)) {
 			enable_replica(-i);
 			fprintf(fo,"0002OK");
 			} else {
@@ -2122,7 +2172,7 @@ void *start_ctl(void *arg)
 	} else if (strncmp(buf,"trust:",6)==0) {
 		// put replica in active state and trust it
 		sscanf(buf+6,"%2X",&i);
-		if ((i>=0)&&(i<max_replica)) {
+		if ((i>=0)&&(i<config.max_replica)) {
 			trust_replica(-i);
 			fprintf(fo,"0002OK");
 		} else {
@@ -2131,14 +2181,14 @@ void *start_ctl(void *arg)
 		fflush(fo);
 	} else if (strcmp(buf,"info")==0) {
 		// get fs info
-		fprintf(fo,"%4X%s",(unsigned int)strlen(mount_point),mount_point);
+		fprintf(fo,"%4X%s",(unsigned int)strlen(config.mountpoint),config.mountpoint);
 		fflush(fo);
-		fprintf(fo,"%4X%s",(unsigned int)strlen(chironctl_mountpoint),chironctl_mountpoint);
+		fprintf(fo,"%4X%s",(unsigned int)strlen(config.chironctl_mountpoint),config.chironctl_mountpoint);
 		fflush(fo);
-		fprintf(fo,"0002%02X",max_replica);
+		fprintf(fo,"0002%02X",config.max_replica);
 		fflush(fo);
-		for(i=0;i<max_replica;++i) {
-			fprintf(fo,"%4X%s",(unsigned int)paths[i].pathlen,paths[i].path);
+		for(i=0;i<config.max_replica;++i) {
+			fprintf(fo,"%4X%s",(unsigned int)config.replicas[i].pathlen,config.replicas[i].path);
 			fflush(fo);
 		}
 	} else {
@@ -2152,7 +2202,7 @@ void *start_ctl(void *arg)
 void print_version(void)
 {
 	printf(
-	       "This is the ChironFS V%s, a Fuse based filesystem which implements\n"
+	       "This is the ChironFS %s, a Fuse based filesystem which implements\n"
 	       "filesystem replication.\n",
 	       PACKAGE_VERSION
 	      );
@@ -2161,90 +2211,23 @@ void print_version(void)
 
 void help(void)
 {
-	puts("Usage: chironfs [OPTIONS] path=path[=path[=path...]] mount-point");
-	print_version();
-	puts(
-	     "Options:\n"
-	     "\t--ctl, -c PATH\n"
-	     "\t\tMounts a proc-like filesystem in PATH enabling control operations,\n"
-	     "\t\tsee man page and howto to more info about it.\n"
-	     "\t--fuseoptions FUSE OPTIONS, -f FUSE OPTIONS\n"
-	     "\t\tHere you can set Fuse specific options. See Fuse\n"
-	     "\t\tspecific documentation for more help.\n"
-	     "\t--help, -h, -?\n"
-	     "\t\tPrints this help\n"
-	     "\t--log FILE, -l FILE\n"
-	     "\t\tSets a log filename. If you don't set it, no log will be\n"
-	     "\t\tdone at all\n"
-	     "\t--fsname NAME, -n NAME\n"
-	     "\t\tDefines the filesystem label name, for viewing it in df or mount\n"
-	     "\t--quiet, -q\n"
-	     "\t\tDo not print error messages to stderr, just set the exit codes\n"
-	     "\t\tThis does not affect logging\n"
-	     "\t--version, -V\n"
-	     "\t\tPrints version of the software\n"
+	fprintf(stderr, "usage: chironfs [OPTIONS] path=path[=path[=path...]] mountpoint\n");
+	fprintf(stderr, "Arguments:\n"
+	     "    path=path[=path[=path...]]\n"
+	     "        This is the '=' separated list of paths where the replicas will\n"
+	     "        be stored. A path starting by ':' will have a low priority\n"
+	     "    mountpoint\n"
+	     "        The mountpoint through which the replicas will be accessed\n"
 	     "\n"
-	     "path=path[=path[=path...]]\n"
-	     "\tThis the '=' separated list of paths where the replicas will be stored\n"
+	     "ChironFS options:\n"
+	     "    -c PATH, --ctl PATH\n"
+	     "        Mounts a proc-like filesystem in PATH enabling control operations\n"
+	     "    -h, --help            print this help\n"
+	     "    -l FILE, --log file   set a log filename\n"
+	     "    -q, --quiet           do not print error messages\n"
+	     "    -V, --version         print version of the software\n"
 	     "\n"
-	     "mount-point\n"
-	     "\tThe mount-point through which the replicas will be accessed"
 	     );
-}
-
-/*
-   void printf_args(int argc, char**argv, int ndx)
-   {
-   int i;
-   printf("\n%d\n",ndx);
-   for(i=0;i<argc;++i) {
-   printf("%s,",argv[i]);
-   }
-   }
-   */
-
-char *chiron_realpath(char *path)  //UPD: Check all
-{
-	char *slash, *basedir, *realbasedir, *really_realpath, *fname;
-	slash = strrchr(path,'/');
-	if (slash==NULL) {
-		basedir = getcwd(NULL,0);
-		if (basedir==NULL) {
-			return(NULL);
-		}
-		fname = path;
-	} else {
-		(*slash) = 0;
-		basedir = strdup(path);
-		(*slash) = '/';
-		if (basedir==NULL) {
-			return(NULL);
-		}
-		fname = slash + 1;
-	}
-	if (basedir[0]==0) {
-		really_realpath = strdup(fname);
-		if (really_realpath==NULL) {
-			free(basedir);
-			return(NULL);
-		}
-	} else {
-		realbasedir = do_realpath(basedir,NULL);
-		if (realbasedir==NULL) {
-			free(basedir);
-			return(NULL);
-		}
-		really_realpath = malloc(strlen(realbasedir)+strlen(fname)+2);
-		if (really_realpath==NULL) {
-			free(basedir);
-			free(realbasedir);
-			return(NULL);
-		}
-		sprintf(really_realpath,"%s/%s",realbasedir,fname);
-		free(realbasedir);
-	}
-	free(basedir);
-	return(really_realpath);
 }
 
 static struct fuse_operations chiron_oper = {
@@ -2281,209 +2264,89 @@ static struct fuse_operations chiron_oper = {
 };
 
 
+static int chironfs_opt_proc(void *data, const char *arg, int key,
+			     struct fuse_args *outargs)
+{
+	switch(key) {
+	case FUSE_OPT_KEY_OPT:
+		return 1;
+	case FUSE_OPT_KEY_NONOPT:
+		if (!options.replica_args && strchr(arg, '=')) {
+			options.replica_args = strdup(arg);
+			return 0;
+		} else if (!options.mountpoint) {
+			char mountpoint[PATH_MAX];
+			if (!realpath(arg, mountpoint)) {
+				fprintf(stderr, "fuse: bad mount point `%s': %s\n",
+					arg, strerror(errno));
+				return -1;
+			}
+			options.mountpoint = strdup(mountpoint);
+			return fuse_opt_add_arg(outargs, mountpoint);
+		}
+		return 1;
+	case KEY_HELP:
+		help();
+		fuse_opt_add_arg(outargs, "-ho");
+		fuse_main(outargs->argc, outargs->argv, &chiron_oper);
+		exit(1);
+	case KEY_VERSION:
+		print_version();
+		fuse_opt_add_arg(outargs, "--version");
+		fuse_main(outargs->argc, outargs->argv, &chiron_oper);
+		exit(1);
+	default:
+		dbg("Unknown option: %d", key);
+	}
+}
+
 int main(int argc, char *argv[])
 {
+	int res, i;
+	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
-	int option_index = 0;
 	umask(0);
 
-	qtopt = 0;
+	dbg("Starting\n");
 
-	dbg("\n-------------------------------------------------------------------------------");
-	dbg("\n STARTING ");
-	dbg("\n-------------------------------------------------------------------------------");
+	if(fuse_opt_parse(&args, &options, chironfs_opts,
+			  chironfs_opt_proc) == -1)
+		exit(1);
 
+	dbg("args.argv =  [\n");
+	for(i=0; i < args.argc; i++)
+	{
+		dbg("\t[%d] [%s]\n", i, args.argv[i]);
+	}
+	dbg("]\n");
+	dbg("options.replica_args = %s\n", options.replica_args);
+	dbg("options.mountpoint = %s\n", options.mountpoint);
+	dbg("options.logname = %s\n", options.logname);
+	dbg("options.ctl_mountpoint = %s\n", options.ctl_mountpoint);
 
-	do {
-		c = getopt_long (argc, argv, short_options, long_options, &option_index);
-		switch (c) {
-		case 'h':
-		case '?':
-			help();
-			exit(0);
-			break;
-
-		case 'V':
-			print_version();
-			exit(0);
-			break;
-
-		case 'n':
-			argvbuf = malloc(8+strlen(optarg));
-			if (argvbuf==NULL) {
-				print_err(CHIRONFS_ERR_LOW_MEMORY,"comand line option (-n) parse buffer allocation");
-				exit(CHIRONFS_ERR_LOW_MEMORY);
-			}
-			sprintf(argvbuf,"fsname=%s", optarg);
-			qtopt+=2;
-			break;
-		case 'f':
-			fuse_options = strdup(optarg);
-			if (fuse_options==NULL) {
-				print_err(CHIRONFS_ERR_LOW_MEMORY,"command line option (-f) argument allocation");
-				exit(CHIRONFS_ERR_LOW_MEMORY);
-			}
-			qtopt+=2;
-			break;
-		case 'o':
-			fuse_options = strdup(optarg);
-			if (fuse_options==NULL) {
-				print_err(CHIRONFS_ERR_LOW_MEMORY,"comand line option (-o) parse buffer allocation");
-				exit(CHIRONFS_ERR_LOW_MEMORY);
-			}
-			opt_parse(fuse_options,&logname,&argvbuf);
-			qtopt+=2;
-			break;
-		case 'l':
-			logname = chiron_realpath(optarg);
-			if (logname==NULL) {
-				print_err(errno,"comand line option (-l) pathname canonicalization allocation");
-				exit(errno);
-			}
-			qtopt+=2;
-			break;
-		case 'c':
-			mount_ctl = 1;
-			chironctl_mountpoint = do_realpath(optarg,NULL);
-			if (chironctl_mountpoint==NULL) {
-				print_err(CHIRONFS_ERR_LOW_MEMORY,"comand line option (-c) mount point allocation");
-				exit(CHIRONFS_ERR_LOW_MEMORY);
-			}
-			qtopt+=2;
-			break;
-		case 'q':
-			quiet_mode = 1;
-			qtopt++;
-			break;
-		}
-	} while (c>=0);
-
-	if ((argc-qtopt)!=3) {
-		print_err(CHIRONFS_ERR_BAD_OPTIONS,NULL);
-		help();
-		exit(CHIRONFS_ERR_BAD_OPTIONS);
+	if(!options.replica_args) {
+		print_err(EINVAL, "Replica cannot be empty");
+		exit(1);
 	}
 
-	if (logname!=NULL) {
-		if (strncmp(argv[qtopt+2],logname,strlen(argv[qtopt+2]))==0) { //UPD: must handle :mountpoint
-			print_err(CHIRONFS_ERR_LOG_ON_MOUNTPOINT,NULL);
-			exit(CHIRONFS_ERR_LOG_ON_MOUNTPOINT);
-		}
+	if(options.mountpoint) {
+		config.mountpoint = options.mountpoint;
+	}
+	else {
+		print_err(EINVAL, "Mountpoint cannot be empty");
+		exit(1);
 	}
 
-	if (argvbuf==NULL) {
-		if (argv[qtopt+2][0]==':') {
-			argvbuf = malloc(30+strlen(argv[qtopt+1]));
-			if (argvbuf!=NULL) {
-				//            sprintf(argvbuf,"fsname=%s,direct_io,nonempty", argv[qtopt+1]);
-				sprintf(argvbuf,"fsname=%s,nonempty", argv[qtopt+1]);
-			}
-		} else {
-			argvbuf = malloc(20+strlen(argv[qtopt+1]));
-			if (argvbuf!=NULL) {
-				//            sprintf(argvbuf,"fsname=%s,direct_io", argv[qtopt+1]);
-				sprintf(argvbuf,"fsname=%s", argv[qtopt+1]);
-			}
-		}
+	if(options.logname) {
+		open_log(options.logname);
 	}
 
-	if (argvbuf!=NULL) {
+	//mount_ctl = 1;
+	//config.chironctl_mountpoint = do_realpath(optarg,NULL);
 
-		if (fuse_options!=NULL) {
-			fuse_argvlen = strlen(fuse_options);
-		}
-		fuse_argvlen += strlen(argvbuf);
+	res = do_mount(options.replica_args, options.mountpoint);
+	res = fuse_main(args.argc, args.argv, &chiron_oper);
 
-		fuse_arg = malloc(fuse_argvlen+6);
-		if (fuse_arg==NULL) {
-			free(argvbuf);
-			if (fuse_options!=NULL) {
-				free(fuse_options);
-			}
-			print_err(CHIRONFS_ERR_LOW_MEMORY,"fuse comand line fuse_arg allocation");
-			exit(CHIRONFS_ERR_LOW_MEMORY);
-		}
-		if (fuse_options!=NULL) {
-			sprintf(fuse_arg,"-o%s,%s",fuse_options,argvbuf);
-		} else {
-			sprintf(fuse_arg,"-o%s",argvbuf);
-		}
-
-		res = do_mount(argv[qtopt+1],argv[qtopt+2]);
-
-		if (!res) {
-			fuse_argv[0] = argv[qtopt+1];
-			fuse_argv[1] = mount_point;
-			fuse_argv[2] = fuse_arg;
-
-			dbg("\n-------------------------------------------------------------------------------");
-			dbg("\nmount: %s %s", argv[qtopt+1], argv[qtopt+2]);
-			dbg("\nfuse_argv: %s %s %s", fuse_argv[0], fuse_argv[1], fuse_argv[2]);
-			dbg("\n-------------------------------------------------------------------------------");
-
-#ifdef HAVE_GETMNTENT
-			FILE *mtab;
-			struct mntent *mntentry;
-
-			mtab = setmntent("/etc/mtab", "r");
-			do {
-				mntentry = getmntent(mtab);
-				if (mntentry!=NULL) {
-					dbg("\n%s -> %s (%s)", mntentry->mnt_fsname, mntentry->mnt_dir, mntentry->mnt_type);
-				}
-			} while(mntentry!=NULL);
-			endmntent (mtab);
-			dbg("\n-------------------------------------------------------------------------------");
-#else
-			int i, qtent;
-#if defined(__FreeBSD__)
-			struct statfs *mntbufp;
-#else
-			struct statvfs *mntbufp;
-#endif
-
-			qtent = getmntinfo(&mntbufp, MNT_NOWAIT);
-			for(i=0;i<qtent;++i) {
-				dbg("%s -> %s (%s)\n",mntbufp[i].f_mntfromname,mntbufp[i].f_mntonname,mntbufp[i].f_fstypename);
-			}
-#endif
-
-			if (mount_ctl) {
-				ctlname = strdup(argv[0]);
-				if (ctlname==NULL) {
-					free(argvbuf);
-					if (fuse_options!=NULL) {
-						free(fuse_options);
-					}
-					free(fuse_arg);
-					print_err(-res,"trying to determine the name of the chirctl executable");
-					exit(-res);
-				}
-				sprintf(ctlname+strlen(ctlname)-4,"ctl");
-			}
-
-			res = fuse_main(3, fuse_argv, &chiron_oper);
-			free(argvbuf);
-			if (fuse_options!=NULL) {
-				free(fuse_options);
-			}
-			if (fuse_arg!=NULL) {
-				free(fuse_arg);
-			}
-			//      } else {
-			//         printf("\nres:%d",res);
-	}
-
-	if (logname!=NULL) {
-		free(logname);
-	}
-	return(res);
-	}
-
-	if (fuse_options!=NULL) {
-		free(fuse_options);
-	}
-	print_err(CHIRONFS_ERR_LOW_MEMORY,"fuse comand line argvbuf allocation");
-	return(CHIRONFS_ERR_LOW_MEMORY);
+	return 0;
 }
 

@@ -1,3 +1,20 @@
+/* Copyright 2015 Thiébaud Weksteen
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 3 of the License.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ */
+
 #ifndef CHIRONFS_DEBUG_H
 #define CHIRONFS_DEBUG_H
 
@@ -11,6 +28,15 @@
 #include <errno.h>
 #include <time.h>
 #include <sys/time.h>
+
+#include "fs.h"
+
+struct logger {
+        FILE *logfd;
+        int quiet;
+};
+
+extern struct logger logger;
 
 #ifdef DEBUG
 #define dbg(param, ...) debug(param, ##__VA_ARGS__)
@@ -30,13 +56,10 @@ int timeval_sub (struct timeval *result, struct timeval *x, struct timeval *y);
 
 #endif
 
-void print_err(int err, char *specifier);
-void call_log(char *fnname, char *resource, int err);
-void attach_log(void);
+void print_err(int, char *);
+void _log(char *, char *, int);
+void open_log(char *);
 
 extern char                   *errtab[];
-extern FILE    *logfd;
-extern int      quiet_mode;
-extern char    *logname;
 
 #endif /* CHIRONFS_DEBUG_H */

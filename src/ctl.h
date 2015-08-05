@@ -1,5 +1,5 @@
 /* Copyright 2005-2008 Luis Furquim
- *
+ * Copyright 2015 Thiébaud Weksteen
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,6 +18,8 @@
 
 #ifndef CHIRONFS_CTL_H
 #define CHIRONFS_CTL_H
+
+#include "common.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -49,7 +51,7 @@ extern struct          fuse_operations chironctl_oper;
 extern int             max_replica;
 extern char           *mount_point;
 extern char           *chironctl_mountpoint;
-extern path_t         *paths;
+extern replica_t         *replicas;
 extern unsigned long   inode_count;
 extern char           *chironctl_parentdir;
 extern FILE           *tochironfs, *fromchironfs;

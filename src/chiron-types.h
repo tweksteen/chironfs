@@ -14,7 +14,7 @@ typedef struct {
    size_t  pathlen;
    time_t  disabled;
    int     priority;
-} path_t;
+} replica_t;
 
 /* 
  * When a file is accessed, the chiron system transparently mirrors that
@@ -24,7 +24,7 @@ typedef struct {
  */
 
 // Structure of the file descriptor replica table
-typedef struct FD {
+typedef struct {
    int **fd;
    int  used;
 } fd_t;
@@ -35,13 +35,13 @@ typedef struct FD {
  *  panel" of the mounted filesystem.
  */
 
- typedef struct ctlfs_entry {
+typedef struct ctlfs_entry {
    char               *path;
    struct stat         attr;
    struct ctlfs_entry *ctlfs;
 } ctlfs_entry_t;
 
- typedef struct ctlfs_search {
+typedef struct {
    struct ctlfs_entry *ctlfs;
    int                 i;
 } ctlfs_search_t;

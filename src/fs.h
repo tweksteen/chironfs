@@ -1,5 +1,5 @@
 /* Copyright 2005-2008 Luis Furquim
- *
+ * Copyright 2015 Thiébaud Weksteen
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <stddef.h>
 #include <stdarg.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -56,62 +57,62 @@
 #endif
 
 #include "chiron-types.h"
+#include "conf.h"
 #include "debug.h"
 #include "utils.h"
 #include "hash.h"
 
-extern int      max_replica;
-extern int      curr_replica;
-extern int      max_replica_high;
-extern int      curr_replica_high;
-extern int      max_replica_low;
-extern int      curr_replica_low;
-extern int      max_replica_cache;
-extern int      curr_replica_cache;
-extern int    **round_robin_high;
-extern int    **round_robin_low;
-extern int    **round_robin_cache;
-extern path_t  *paths;
-extern char    *mount_point;
-extern uint64_t   qt_hash_bits;
-extern uint64_t   hash_mask;
-extern char *chironctl_mountpoint;
+/*
+ * Main configuration structure for ChironFS.
+ */
+struct chironfs_config {
+	unsigned int max_replica;
+	unsigned int max_replica_high;
+	unsigned int max_replica_low;
+	unsigned int curr_replica_high;
+	unsigned int curr_replica_low;
+	unsigned int *round_robin_high;
+	unsigned int *round_robin_low;
+	replica_t     *replicas;
+	char         *mountpoint;
+	char         *chironctl_mountpoint;
+	char         *chironctl_execname;
+	fd_t         tab_fd;
+	uint64_t     fd_buf_size;
+};
 
+extern struct chironfs_config config;
 
-#ifdef __linux__
-#define CHIRON_LIMIT RLIMIT_OFILE
-#define do_realpath(p,r) realpath(p,r)
-#else
-#define CHIRON_LIMIT RLIMIT_NOFILE
-#endif
+/* 
+ * This structure is used to parse command line options using the 
+ * fuse_opt_parse wrapper. Its content is not used once initialisation
+ * is finished.
+ */
+struct chironfs_options {
+	char *ctl_mountpoint;
+	char *replica_args;
+	char *logname;
+	char *mountpoint;
+	int  quiet;
+};
 
-extern fd_t                    tab_fd;
-extern long long unsigned int  FD_BUF_SIZE;
-extern int  res, c, qtopt, fuse_argvlen;
-extern char *argvbuf, *fuse_options, *fuse_arg, *fuse_argv[4];
+extern struct chironfs_options options;
+#define CHIRON_OPT(t, p, v) { t, offsetof(struct chironfs_options, p), v }
+enum {
+	KEY_HELP,
+	KEY_VERSION
+};
 
 void help(void);
-void free_tab_fd(void);
-int **mk_round_robin(int *tmp_list, int dim);
-void free_paths(void);
-void print_paths(void);
-int do_mount(char *filesystems, char *mountpoint);
 unsigned hash_fd(unsigned fd_main);
 int fd_hashseekfree(unsigned fd_ndx);
 int fd_hashset(int *fd);
-int fd_hashseek(int fd_main);
-#ifndef __linux__
-char *do_realpath(const char *pathname, char *resolvedname);
-#endif
+char *xlate(const char *fname, char *rpath);
 int choose_replica(int try);
 void disable_replica(int n);
-void opt_parse(char *fo, char**log, char**argvbuf);
 void printf_args(int argc, char**argv, int ndx);
 void print_version(void);
-char *chiron_realpath(char *path);
 void free_round_robin(int **rr, int max_rep);
-uint64_t hash64shift(uint64_t key);
-uint32_t hash( uint32_t a);
 int get_rights_by_name(const char *fname);
 int get_rights_by_name_l(const char *fname);
 int get_rights_by_fd(int fd);

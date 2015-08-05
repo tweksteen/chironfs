@@ -13,6 +13,5 @@
 extern char    *currdir;
 
 int read_a_line(char **buf, int *c, FILE *f);
-char *xlate(const char *fname, char *rpath);
 
 #endif /* CHIRONFS_UTILS_H */

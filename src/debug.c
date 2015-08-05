@@ -1,5 +1,5 @@
 /* Copyright 2005-2008 Luis Furquim
- *
+ * Copyright 2015 Thiébaud Weksteen
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,135 +18,129 @@
 
 #include "debug.h"
 
+struct logger logger;
+
 char *errtab[] = {
-   "Low memory",
-   "Log file must be outside of the mount point",
-   "",
-   "Too many opened files",
-   "Cannot open the log file",
-   "Invalid PATH_MAX definition, check your include files and recompile",
-   "Forced by administrator"
+	"Low memory",
+	"Log file must be outside of the mount point",
+	"",
+	"Too many opened files",
+	"Cannot open the log file",
+	"Invalid PATH_MAX definition, check your include files and recompile",
+	"Forced by administrator"
 };
-FILE    *logfd              = NULL;
-int      quiet_mode         = 0;
-char    *logname            = NULL;
 
 #ifdef DEBUG
 void debug(const char *s, ...)
 {
-   FILE *fd;
-   int res;
-   int bkerrno = errno;
-   va_list ap;
+	FILE *fd;
+	int res;
+	int bkerrno = errno;
+	va_list ap;
 
-   va_start (ap, s);
-   fd  = fopen("/tmp/chironfs-dbg.txt","a");
-   res = vfprintf(fd,s,ap);
-   fclose(fd);
-   va_end (ap);
+	va_start (ap, s);
+	fd  = fopen("/tmp/chironfs-dbg.txt","a");
+	res = vfprintf(fd, s, ap);
+	fclose(fd);
+	va_end (ap);
 
-   errno = bkerrno;
+	errno = bkerrno;
 }
 
 /*
    Subtract the `struct timeval' values X and Y,
    storing the result in RESULT.
    Return 1 if the difference is negative, otherwise 0.
-*/
+   */
 
-int timeval_sub (struct timeval *result, struct timeval *x, struct timeval *y)
+int timeval_sub(struct timeval *result, struct timeval *x, struct timeval *y)
 {
-   /* Perform the carry for the later subtraction by updating y. */
-   if (x->tv_usec < y->tv_usec) {
-      int nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
-      y->tv_usec -= 1000000 * nsec;
-      y->tv_sec += nsec;
-   }
-   if (x->tv_usec - y->tv_usec > 1000000) {
-      int nsec = (x->tv_usec - y->tv_usec) / 1000000;
-      y->tv_usec += 1000000 * nsec;
-      y->tv_sec -= nsec;
-   }
+	/* Perform the carry for the later subtraction by updating y. */
+	if (x->tv_usec < y->tv_usec) {
+		int nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
+		y->tv_usec -= 1000000 * nsec;
+		y->tv_sec += nsec;
+	}
+	if (x->tv_usec - y->tv_usec > 1000000) {
+		int nsec = (x->tv_usec - y->tv_usec) / 1000000;
+		y->tv_usec += 1000000 * nsec;
+		y->tv_sec -= nsec;
+	}
 
-   /* Compute the time remaining to wait.
-      tv_usec is certainly positive. */
-   result->tv_sec = x->tv_sec - y->tv_sec;
-   result->tv_usec = x->tv_usec - y->tv_usec;
+	/* Compute the time remaining to wait.
+	   tv_usec is certainly positive. */
+	result->tv_sec = x->tv_sec - y->tv_sec;
+	result->tv_usec = x->tv_usec - y->tv_usec;
 
-   /* Return 1 if result is negative. */
-   return x->tv_sec < y->tv_sec;
+	/* Return 1 if result is negative. */
+	return x->tv_sec < y->tv_sec;
 }
 
 #endif
 
 void print_err(int err, char *specifier)
 {
-   if (!quiet_mode) {
-      if (specifier==NULL) {
-         if (err>0) {
-            fprintf(stderr,"%s\n",strerror(err));
-         } else {
-            fprintf(stderr,"%s\n",errtab[-(err+1)]);
-         }
-      } else {
-         if (err>0) {
-            fprintf(stderr,"%s: %s\n",specifier,strerror(err));
-         } else {
-            fprintf(stderr,"%s: %s\n",specifier,errtab[-(err+1)]);
-         }
-      }
-   }
+	if (!logger.quiet) {
+		if (specifier==NULL) {
+			if (err > 0) {
+				fprintf(stderr,"%s\n",strerror(err));
+			} else {
+				fprintf(stderr,"%s\n",errtab[-(err+1)]);
+			}
+		} else {
+			if (err > 0) {
+				fprintf(stderr,"%s: %s\n",specifier,strerror(err));
+			} else {
+				fprintf(stderr,"%s: %s\n",specifier,errtab[-(err+1)]);
+			}
+		}
+	}
 }
 
-
-void call_log(char *fnname, char *resource, int err)
+void _log(char *fnname, char *resource, int err)
 {
-   time_t     t;
-   struct tm *ptm;
-   char       tmstr[20];
+	time_t     t;
+	struct tm *ptm;
+	char       tmstr[20];
 
-   if (logfd!=NULL) {
-      attach_log();
-      flockfile(logfd);
-      t   = time(NULL);
-      ptm = localtime(&t);
-      strftime(tmstr,19,"%Y/%m/%d %H:%M ",ptm);
-      fputs(tmstr,logfd);
-      fputs(fnname,logfd);
-      if (err!=CHIRONFS_ADM_FORCED) {
-         fputs(" failed accessing ",logfd);
-      } else {
-         fputs(" ",logfd);
-      }
-      fputs(resource,logfd);
-      if (err) {
-         fputs(" ",logfd);
-         if (err>0) {
-            fputs(strerror(err),logfd);
-         } else {
-            fputs(errtab[-(err+1)],logfd);
-         }
-      }
-      fputs("\n",logfd);
-      fflush(logfd);
-      funlockfile(logfd);
-   }
+	if (logger.logfd) {
+		flockfile(logger.logfd);
+		t   = time(NULL);
+		ptm = localtime(&t);
+		strftime(tmstr,19,"%Y/%m/%d %H:%M ",ptm);
+		fputs(tmstr,logger.logfd);
+		fputs(fnname,logger.logfd);
+		if (err!=CHIRONFS_ADM_FORCED) {
+			fputs(" failed accessing ",logger.logfd);
+		} else {
+			fputs(" ", logger.logfd);
+		}
+		fputs(resource,logger.logfd);
+		if (err) {
+			fputs(" ", logger.logfd);
+			if (err>0) {
+				fputs(strerror(err),logger.logfd);
+			} else {
+				fputs(errtab[-(err+1)],logger.logfd);
+			}
+		}
+		fputs("\n",logger.logfd);
+		fflush(logger.logfd);
+		funlockfile(logger.logfd);
+	}
 }
 
-void attach_log(void)
+void open_log(char *logname)
 {
-   mode_t tmpmask;
+	mode_t tmpmask;
 
-   if (logfd) {
-      fclose(logfd);
-   }
-   tmpmask = umask(0133);
-   logfd = fopen(logname,"a");
-   umask(tmpmask);
-   if (logfd==NULL) {
-      print_err(CHIRONFS_ERR_BAD_LOG_FILE,logname);
-      exit(CHIRONFS_ERR_BAD_LOG_FILE);
-   }
-   setvbuf(logfd, NULL, _IOLBF, 0);
+	tmpmask = umask(0133);
+	logger.logfd = fopen(logname, "a");
+	umask(tmpmask);
+	if (!logger.logfd) {
+		print_err(errno, logname);
+		exit(errno);
+	}
+	setvbuf(logger.logfd, NULL, _IOLBF, 0);
 }
 

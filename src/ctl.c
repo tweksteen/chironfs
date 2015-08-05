@@ -1,5 +1,5 @@
 /* Copyright 2005-2008 Luis Furquim
- *
+ * Copyright 2015 Thiébaud Weksteen
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,7 +16,6 @@
  *
  */
 
-
 #include "ctl.h"
 
 ctlfs_entry_t   ctlfs[2];
@@ -24,7 +23,7 @@ ctlfs_entry_t   ctlfs[2];
 int             max_replica          = 0;
 char           *mount_point          = NULL;
 char           *chironctl_mountpoint = NULL;
-path_t         *paths                = NULL;
+replica_t      *replicas             = NULL;
 unsigned long   inode_count          = 0;
 char           *fuse_options         = "-oallow_other,debug";
 char           *chironctl_parentdir  = NULL;
@@ -141,7 +140,7 @@ int mkctlfs()
 	dbg("\nalloced");
 
 	for(i=0;i<max_replica;++i) {
-		ctlfs->ctlfs[i] = mkstatnod(malloc(sizeof(char) * (2+strlen(paths[i].path))),
+		ctlfs->ctlfs[i] = mkstatnod(malloc(sizeof(char) * (2+strlen(replicas[i].path))),
 					    S_IFDIR | S_IRUSR | S_IXUSR | ((S_IRUSR | S_IXUSR)>>3),
 					    st.st_uid,st.st_gid);
 		if (ctlfs->ctlfs[i].path == NULL) {
@@ -149,8 +148,8 @@ int mkctlfs()
 			dbg("\nctl out of mem");
 			return(-1);
 		}
-		sprintf(ctlfs->ctlfs[i].path,"%s",paths[i].path);
-		dbg("\nctl: path=%s, path2=%s ino=%d",paths[i].path, ctlfs->ctlfs[i].path, ctlfs->ctlfs[i].attr.st_ino);
+		sprintf(ctlfs->ctlfs[i].path,"%s",replicas[i].path);
+		dbg("\nctl: path=%s, path2=%s ino=%d",replicas[i].path, ctlfs->ctlfs[i].path, ctlfs->ctlfs[i].attr.st_ino);
 
 		// replica subdir
 		ctlfs->ctlfs[i].ctlfs = malloc(sizeof(ctlfs_entry_t)*3);
@@ -162,7 +161,7 @@ int mkctlfs()
 		ctlfs->ctlfs[i].ctlfs[2].path = NULL;
 		// status file
 		ctlfs->ctlfs[i].ctlfs[0] = mkstatnod(malloc(sizeof(char) * (2+strlen(status_fname))),
-						     S_IFREG | S_IRUSR | S_IWRITE | ((S_IRUSR | S_IWRITE)>>3),
+						     S_IFREG | S_IRUSR | S_IWUSR | ((S_IRUSR | S_IWUSR)>>3),
 						     st.st_uid,st.st_gid);
 		if (ctlfs->ctlfs[i].ctlfs[0].path == NULL) {
 			free_ctlnode(ctlfs->ctlfs);
@@ -644,13 +643,13 @@ void free_vars(void)
 	if (mount_point!=NULL) {
 		free(mount_point);
 	}
-	if (paths!=NULL) {
+	if (replicas!=NULL) {
 		for(i=0;i<max_replica;++i) {
-			if (paths[i].path != NULL) {
-				free(paths[i].path);
+			if (replicas[i].path != NULL) {
+				free(replicas[i].path);
 			}
 		}
-		free(paths);
+		free(replicas);
 	}
 }
 
@@ -711,15 +710,15 @@ int main(int argc, char *argv[])
 	}
 	sscanf(buf,"%X",&max_replica);
 	dbg("max-replica: %s (%d)",buf,max_replica);
-	paths = malloc(sizeof(path_t)*max_replica);
-	if (paths==NULL) {
+	replicas = malloc(sizeof(replica_t) * max_replica);
+	if (replicas==NULL) {
 		dbg("no mem");
 		free(buf);
 		free_vars();
 		exit(-1);
 	}
 	for(i=0;i<max_replica;++i) {
-		paths[i].path = NULL;
+		replicas[i].path = NULL;
 	}
 	for(i=0;i<max_replica;++i) {
 		someerr = read_a_line(&buf,&sz,stdin);
@@ -728,19 +727,19 @@ int main(int argc, char *argv[])
 			exit(-1);
 		}
 		dbg("replica: %s",buf);
-		paths[i].path = malloc(sizeof(char) * strlen(buf) + 2);
-		if (paths[i].path==NULL) {
+		replicas[i].path = malloc(sizeof(char) * strlen(buf) + 2);
+		if (replicas[i].path==NULL) {
 			dbg("no mem");
 			free(buf);
 			free_vars();
 			exit(-1);
 		}
-		paths[i].path[0]='/';
+		replicas[i].path[0]='/';
 		for(l=strlen(buf),j=0;j<l;++j) {
 			if (buf[j]=='/') {
-				paths[i].path[j+1] = '_';
+				replicas[i].path[j+1] = '_';
 			} else {
-				paths[i].path[j+1] = buf[j];
+				replicas[i].path[j+1] = buf[j];
 			}
 		}
 	}
