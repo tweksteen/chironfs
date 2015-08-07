@@ -10,6 +10,8 @@ Makefile.in
 /missing
 /stamp-h?
 /test-driver
+/test/*.log
+/test/*.trs
 .deps/
 *.o
 *~
