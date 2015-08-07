@@ -56,5 +56,4 @@ AS_IF([test "x$enable_debug" = "xyes"], [
 AC_CONFIG_FILES([Makefile] [src/Makefile] [doc/Makefile] [man/Makefile] [test/Makefile])
 AC_DEFINE(PACKAGE, [chironfs], [Package Name])
 AC_DEFINE(VERSION, [1.1.1], [Package Version])
-AC_SUBST([AM_CXXFLAGS], [-Wall])
 AC_OUTPUT
