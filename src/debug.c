@@ -34,13 +34,12 @@ char *errtab[] = {
 void debug(const char *s, ...)
 {
 	FILE *fd;
-	int res;
 	int bkerrno = errno;
 	va_list ap;
 
 	va_start (ap, s);
 	fd  = fopen("/tmp/chironfs-dbg.txt","a");
-	res = vfprintf(fd, s, ap);
+	vfprintf(fd, s, ap);
 	fclose(fd);
 	va_end (ap);
 
