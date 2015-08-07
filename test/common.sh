@@ -1,11 +1,10 @@
 #!/bin/sh
-set -e
 
 chironfs_pid=0
 
 function clean_up {
   kill $chironfs_pid
-  wait $chironfs_pid
+  sleep 1
   rm -rf t1 t2 t3
   [ -f test.log ] &&  rm test.log
 }
@@ -22,7 +21,7 @@ function create_test_directories {
 function start_chiron {
   ../src/chironfs -f --log ./test.log t1=t2 t3 &
   chironfs_pid=$!
-  echo "Chironfs PID is $chironfs_pid"
+  echo "ChironFS pid is $chironfs_pid"
   sleep 1
 }
 

@@ -9,7 +9,8 @@ start_chiron
 mkdir t3/mysubdir
 mkdir t3/mysubdir/subsubdir
 
-sleep 1
+ls -alR t3/mysubdir
+
 if [ ! -d t1/mysubdir/subsubdir -o ! -d t2/mysubdir/subsubdir ]; then
   echo "Failed replication"
   clean_and_exit -1
