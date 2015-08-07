@@ -1,6 +1,7 @@
 Makefile
 Makefile.in
 /aclocal.m4
+/autom4te.cache
 /compile
 /config.*
 /configure
@@ -8,6 +9,7 @@ Makefile.in
 /install-sh
 /missing
 /stamp-h?
+/test-driver
 .deps/
 *.o
 *~
