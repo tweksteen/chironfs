@@ -7,12 +7,13 @@
 typedef struct {
    char   *path;
    long    totrd, totwr;
-   struct  {
+   /*
+   struct {
       int    old_rd_avg, curr_rd_avg, curr_rd, old_wr_avg, curr_wr_avg, curr_wr;
       time_t upd;
-   } min1, min5, min15, min30, hour1, hour12, day, week, month, year;
+   } min1, min5, min15, min30, hour1, hour12, day, week, month, year; */
    size_t  pathlen;
-   time_t  disabled;
+   int     disabled;
    int     priority;
 } replica_t;
 
