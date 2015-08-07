@@ -136,14 +136,13 @@ char *xlate(const char *fname, char *rpath)
 	char *rname;
 	int   rlen, flen;
 
-	if ((rpath==NULL)||(fname==NULL)) {
-		return(NULL);
+	if (!rpath || !fname) {
+		return NULL;
 	}
-
-	if (!strcmp(rpath,".")) {
+	if (!strcmp(rpath, ".")) {
 		flen = strlen(fname);
 		rname = malloc(1+flen);
-		if (rname!=NULL) {
+		if (rname) {
 			if (!strcmp(fname,"/")) {
 				strcpy(rname,currdir);
 			} else {
@@ -153,14 +152,14 @@ char *xlate(const char *fname, char *rpath)
 	} else {
 		rlen = strlen(rpath);
 		flen = strlen(fname);
-		rname = malloc(1+rlen+flen);
-		if (rname!=NULL) {
-			strcpy(rname,rpath);
-			strcpy(rname+rlen,fname);
+		rname = malloc(1 + rlen + flen);
+		if (rname) {
+			strcpy(rname, rpath);
+			strcpy(rname + rlen,fname);
 		}
 	}
 	dbg("xlate %s\n",rname);
-	return(rname);
+	return rname;
 }
 
 int choose_replica(int try)
@@ -295,7 +294,7 @@ int get_first_error(int *err_list)
 static int chiron_open(const char *path, struct fuse_file_info *fi)
 {
 	char   *fname;
-	int     i, fd_ndx = -1, *fd, *err_list;
+	int     i, fd_ndx = -1, *fd, *err_list, err;
 	int     succ_cnt=0, fail_cnt=0;
 	decl_tmvar(t1, t2, t3);
 	decl_tmvar(t4, t5, t6);
@@ -340,8 +339,8 @@ static int chiron_open(const char *path, struct fuse_file_info *fi)
 			continue;
 		}
 
-		free(fname);
 		succ_cnt++;
+		free(fname);
 		dbg("opened fd=%x, fi->flags=0%o\n", fd[i], fi->flags);
 
 		gettmday(&t5,NULL);
@@ -360,21 +359,12 @@ static int chiron_open(const char *path, struct fuse_file_info *fi)
 
 	/* All the replicas failed */
 	if (!succ_cnt) {
-		for(i = 0; i < config.max_replica; i++) {
-			if (!config.replicas[i].disabled) {
-				if (err_list[i]) {
-					dbg("retval: %d, %d, %d\n",
-					    -err_list[i],err_list[i],i);
-					errno = err_list[i];
-				}
-			}
-		}
+		err = get_first_error(err_list);
 		free(err_list);
 		free(fd);
 		reacquire_priv();
-		return errno;
+		return err;
 	}
-
 	free(err_list);
 
 	/* Try to allocate a slot inside the file descriptors pool */
@@ -570,7 +560,7 @@ static int chiron_getattr(const char *path, struct stat *stbuf)
 		}
 
 		fname = xlate(path, config.replicas[replica].path);
-		if(!fname) {
+		if (!fname) {
 			continue;
 		}
 
@@ -630,7 +620,7 @@ static int chiron_access(const char *path, int mask)
 		}
 
 		fname = xlate(path, config.replicas[replica].path);
-		if(!fname) {
+		if (!fname) {
 			continue;
 		}
 
@@ -712,8 +702,8 @@ static int chiron_readlink(const char *path, char *buf, size_t size)
 		}
 
 		succ_cnt++;
-		buf[res] = 0;
 		free(fname);
+		buf[res] = 0;
 		break;
 	}
 
@@ -841,7 +831,6 @@ static int chiron_mknod(const char *path_orig, mode_t mode, dev_t rdev)
 				continue;
 			}
 			close(fd);
-			succ_cnt++;
 			dbg("mknod/open+chown: %s\n", path_orig);
 
 		} else if (S_ISFIFO(mode)) {
@@ -852,7 +841,6 @@ static int chiron_mknod(const char *path_orig, mode_t mode, dev_t rdev)
 				free(fname);
 				continue;
 			}
-			succ_cnt++;
 			dbg("mknod/fifo+chown: %s\n",path_orig);
 
 		} else {
@@ -860,6 +848,8 @@ static int chiron_mknod(const char *path_orig, mode_t mode, dev_t rdev)
 			reacquire_priv();
 			return -ENOSYS;
 		}
+		succ_cnt++;
+		free(fname);
 	}
 
 	disable_faulty_replicas("mknod", succ_cnt, fail_cnt, err_list);
@@ -915,8 +905,8 @@ static int chiron_truncate(const char *path_orig, off_t size)
 			free(fname);
 			continue;
 		}
-		free(fname);
 		succ_cnt++;
+		free(fname);
 	}
 
 	disable_faulty_replicas("truncate", succ_cnt, fail_cnt, err_list);
@@ -971,8 +961,8 @@ static int chiron_chmod(const char *path_orig, mode_t mode)
 			free(fname);
 			continue;
 		}
-		free(fname);
 		succ_cnt++;
+		free(fname);
 	}
 
 	disable_faulty_replicas("chmod", succ_cnt, fail_cnt, err_list);
@@ -1028,8 +1018,8 @@ static int chiron_chown(const char *path_orig, uid_t uid, gid_t gid)
 			free(fname);
 			continue;
 		}
-		free(fname);
 		succ_cnt++;
+		free(fname);
 	}
 
 	disable_faulty_replicas("chown", succ_cnt, fail_cnt, err_list);
@@ -1085,8 +1075,8 @@ static int chiron_utime(const char *path_orig, struct utimbuf *buf)
 			free(fname);
 			continue;
 		}
-		free(fname);
 		succ_cnt++;
+		free(fname);
 	}
 
 	disable_faulty_replicas("utime", succ_cnt, fail_cnt, err_list);
@@ -1142,8 +1132,8 @@ static int chiron_rmdir(const char *path_orig)
 			free(fname);
 			continue;
 		}
-		free(fname);
 		succ_cnt++;
+		free(fname);
 	}
 
 	disable_faulty_replicas("rmdir", succ_cnt, fail_cnt, err_list);
@@ -1199,8 +1189,8 @@ static int chiron_unlink(const char *path_orig)
 			free(fname);
 			continue;
 		}
-		free(fname);
 		succ_cnt++;
+		free(fname);
 	}
 
 	disable_faulty_replicas("unlink", succ_cnt, fail_cnt, err_list);
@@ -1256,8 +1246,8 @@ static int chiron_mkdir(const char *path_orig, mode_t mode)
 			free(fname);
 			continue;
 		}
-		free(fname);
 		succ_cnt++;
+		free(fname);
 	}
 
 	disable_faulty_replicas("mkdir", succ_cnt, fail_cnt, err_list);
@@ -1311,8 +1301,8 @@ static int chiron_symlink(const char *from, const char *to)
 			free(fname);
 			continue;
 		}
-		free(fname);
 		succ_cnt++;
+		free(fname);
 	}
 
 	disable_faulty_replicas("symlink", succ_cnt, fail_cnt, err_list);
