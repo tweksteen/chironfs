@@ -19,6 +19,7 @@
 #ifndef CHIRONFS_FS_H
 #define CHIRONFS_FS_H
 
+
 #include "common.h"
 
 #include <stdlib.h>
@@ -78,6 +79,8 @@ struct chironfs_config {
 	char         *chironctl_mountpoint;
 	char         *chironctl_execname;
 	fd_t         tab_fd;
+	uid_t	     uid;
+	gid_t        gid;
 	uint64_t     fd_buf_size;
 };
 
@@ -110,18 +113,8 @@ int fd_hashset(int *fd);
 char *xlate(const char *fname, char *rpath);
 int choose_replica(int try);
 void disable_replica(int n);
-void printf_args(int argc, char**argv, int ndx);
-void print_version(void);
-void free_round_robin(int **rr, int max_rep);
-int get_rights_by_name(const char *fname);
-int get_rights_by_name_l(const char *fname);
-int get_rights_by_fd(int fd);
-int check_may_enter(char *fname);
-int get_rights_by_mode(struct stat stb);
-int chiron_mkdir(const char *path_orig, mode_t mode);
-int chiron_getattr(const char *path, struct stat *stbuf);
 void enable_replica(int n);
-void trust_replica(int n);
+void print_version(void);
 void *start_ctl(void *arg);
 void *chiron_init(void);
 

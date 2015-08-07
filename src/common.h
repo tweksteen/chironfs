@@ -3,7 +3,7 @@
 #include "config.h"
 
 #ifdef __linux__
-#define _XOPEN_SOURCE 500
+#define _XOPEN_SOURCE 600
 #endif
 
 #define FUSE_USE_VERSION 25
