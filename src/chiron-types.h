@@ -30,21 +30,4 @@ typedef struct {
    int  used;
 } fd_t;
 
-/*
- *  These are the file attributes of the pseudo-filesystem
- *  mounted via --ctl (or -c) in order to create a "control
- *  panel" of the mounted filesystem.
- */
-
-typedef struct ctlfs_entry {
-   char               *path;
-   struct stat         attr;
-   struct ctlfs_entry *ctlfs;
-} ctlfs_entry_t;
-
-typedef struct {
-   struct ctlfs_entry *ctlfs;
-   int                 i;
-} ctlfs_search_t;
-
 #endif /* CHIRONFS_TYPES_H */

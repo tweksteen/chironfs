@@ -29,7 +29,7 @@ struct chironfs_config config = {
 	.replicas = NULL,
 	.mountpoint = NULL,
 	.chironctl_mountpoint = NULL,
-	.chironctl_execname = "chironctl",
+	.chironctl_execname = "../src/chironctl",
 	.tab_fd = { NULL, 0 },
 	.uid = 0,
 	.gid = 0,
@@ -1325,7 +1325,6 @@ static int chiron_symlink(const char *from, const char *to)
 
 static int chiron_rename(const char *from, const char *to)
 {
-
 	char   *fname_from=NULL, *fname_to=NULL;
 	int     i, res, fail_cnt=0, succ_cnt=0, *err_list, err;
 	decl_tmvar(t1, t2, t3);
@@ -1394,8 +1393,6 @@ static int chiron_link(const char *from, const char *to)
 	int     i, res, fail_cnt=0, succ_cnt=0, *err_list, err;
 	decl_tmvar(t1, t2, t3);
 
-	//do_by2names_rw(0,link(fname_from, fname_to), "link");
-
 	dbg("\n@link %s->%s\n", from, to);
 	drop_priv();
 	gettmday(&t1,NULL);
@@ -1463,32 +1460,31 @@ static int chiron_link(const char *from, const char *to)
  *
  * Introduced in version 2.3
  */
-void *chiron_init()
+void *chiron_init(struct fuse_conn_info *conn)
 {
 	struct stat st;
 	pthread_t   thand;
 	int         i;
 
 	if (config.chironctl_mountpoint) {
-		dbg("\nctl: struct stat initialized");
-		i = stat(config.chironctl_mountpoint,&st);
-		dbg("\nctl: getattr=%d",i);
-		if (i==ENOENT) {
-			dbg("\nctl: NOENT");
+		i = stat(config.chironctl_mountpoint, &st);
+		dbg("ctl: stat=%d\n", i);
+		if (i == ENOENT) {
+			dbg("ctl: creating control directory\n");
 			i = mkdir(config.chironctl_mountpoint,
-				  S_IFDIR | S_IRUSR | S_IXUSR);
-			dbg("\nctl: mkdir=%d",i);
+				  S_IRUSR | S_IXUSR);
+			dbg("ctl: mkdir=%d\n",i);
 		}
 
 		if (i) {
 			dbg("\nctl: nomkdir");
 			_log("control directory", config.chironctl_mountpoint, i);
-				return(NULL);
+				return NULL;
 		}
 
 		if (pthread_create(&thand,NULL,start_ctl, NULL) != 0) {
-			// must end program here
-			return(NULL);
+			// TODO: die
+			return NULL;
 		}
 	}
 	return NULL;
@@ -1508,11 +1504,8 @@ void *start_ctl(void *arg)
 
 	char *buf = NULL;
 	int   i, sz, someerr;
-	//   struct tm t;
 
-	(void) arg;
-
-	dbg("\nthread: started\n");
+	dbg("control thread: started\n");
 
 	if (pipe(ctlpipe_parson)<0) {
 		pthread_exit("error");
@@ -1527,7 +1520,7 @@ void *start_ctl(void *arg)
 		// I am the child
 		close(ctlpipe_parson[1]);
 		close(ctlpipe_sonpar[0]);
-		dbg("\nfork: I am the child\n");
+		dbg("fork: I am the child\n");
 
 		if (ctlpipe_parson[0] != STDIN_FILENO) {
 			dup2 (ctlpipe_parson[0], STDIN_FILENO);
@@ -1539,17 +1532,17 @@ void *start_ctl(void *arg)
 		}
 		// After forking, run the prog who implements the
 		// proc-like filesystem to control the main chironfs
-		dbg("\nchild: execing %s\n",config.chironctl_execname);
+		dbg("child: execing %s\n",config.chironctl_execname);
 		execlp(config.chironctl_execname,config.chironctl_execname,NULL);
-		dbg("\nchild: failed execing %s error is %d\n",config.chironctl_execname,errno);
-	} else if (pid<0) {
+		dbg("child: failed execing %s error is %d\n",config.chironctl_execname,errno);
+	} else if (pid < 0) {
 		pthread_exit("error");
 	}
 	// I am the parent
 	close(ctlpipe_parson[0]);
 	close(ctlpipe_sonpar[1]);
 
-	dbg("\nfork: I am the parent\n");
+	dbg("fork: I am the parent\n");
 	fi = fdopen(ctlpipe_sonpar[0],"r");
 	fo = fdopen(ctlpipe_parson[1],"w");
 
@@ -1558,7 +1551,7 @@ void *start_ctl(void *arg)
 		if (someerr) {
 			pthread_exit("error");
 		}
-		dbg("\nparent: got a msg %s\n",buf);
+		dbg("parent: got a msg %s\n",buf);
 		if (strncmp(buf,"stat:",5)==0) {
 			// status request
 			for(i=0;i<config.max_replica;++i) {
@@ -1684,12 +1677,12 @@ static int chironfs_opt_proc(void *data, const char *arg, int key,
 	case KEY_HELP:
 		help();
 		fuse_opt_add_arg(outargs, "-ho");
-		fuse_main(outargs->argc, outargs->argv, &chiron_oper);
+		fuse_main(outargs->argc, outargs->argv, &chiron_oper, NULL);
 		exit(1);
 	case KEY_VERSION:
 		print_version();
 		fuse_opt_add_arg(outargs, "--version");
-		fuse_main(outargs->argc, outargs->argv, &chiron_oper);
+		fuse_main(outargs->argc, outargs->argv, &chiron_oper, NULL);
 		exit(1);
 	default:
 		dbg("Unknown option: %d", key);
@@ -1743,11 +1736,10 @@ int main(int argc, char *argv[])
 	config.uid = geteuid();
 	config.gid = getegid();
 
-	//mount_ctl = 1;
-	//config.chironctl_mountpoint = do_realpath(optarg,NULL);
+	config.chironctl_mountpoint = realpath(options.ctl_mountpoint, NULL);
 
 	do_mount(options.replica_args, options.mountpoint);
-	res = fuse_main(args.argc, args.argv, &chiron_oper);
+	res = fuse_main(args.argc, args.argv, &chiron_oper, NULL);
 
 	return res;
 }

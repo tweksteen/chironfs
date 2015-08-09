@@ -6,7 +6,7 @@
 #define _XOPEN_SOURCE 600
 #endif
 
-#define FUSE_USE_VERSION 25
+#define FUSE_USE_VERSION 28
 
 #if defined(linux) || defined(__FreeBSD__)
 #else

@@ -19,6 +19,9 @@
 #ifndef CHIRONFS_CTL_H
 #define CHIRONFS_CTL_H
 
+/* For asprintf */
+#define _GNU_SOURCE
+
 #include "common.h"
 
 #include <stdlib.h>
@@ -30,6 +33,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <time.h>
+#include <libgen.h>
 #include <sys/time.h>
 
 #include <sys/statvfs.h>
@@ -46,25 +50,38 @@
 #include "debug.h"
 #include "utils.h"
 
-extern ctlfs_entry_t  ctlfs[];
-extern struct          fuse_operations chironctl_oper;
-extern int             max_replica;
-extern char           *mount_point;
-extern char           *chironctl_mountpoint;
-extern replica_t         *replicas;
-extern unsigned long   inode_count;
-extern char           *chironctl_parentdir;
-extern FILE           *tochironfs, *fromchironfs;
-extern pthread_mutex_t comm;
-extern char           status_fname[];
-extern char           nagios_fname[];
-extern char           nagios_script[];
+typedef struct ctlfs_entry {
+   char                *path;
+   struct stat          attr;
+   struct ctlfs_entry **children;
+   unsigned int		n_children;
+} ctlfs_entry_t;
+
+typedef struct {
+   struct ctlfs_entry *ctlfs;
+   int                 i;
+} ctlfs_search_t;
+
+struct chironctl_config {
+	ctlfs_entry_t   *root;
+	struct          fuse_operations chironctl_oper;
+	int             max_replica;
+	char           *mountpoint;
+	char           *chironctl_mountpoint;
+	replica_t      *replicas;
+	unsigned long   inode_count;
+	char           *chironctl_parentdir;
+	FILE           *to_chironfs, *from_chironfs;
+	pthread_mutex_t mutex;
+};
+
+extern struct chironctl_config config;
+
+#define STATUS_FNAME "status"
 
 int mkctlfs(void);
-ctlfs_entry_t mkstatnod(char *path, unsigned long mode, unsigned short uid, unsigned short gid);
+ctlfs_entry_t *mkstatnod(char *, unsigned long, uid_t, gid_t);
 ctlfs_search_t find_path(const char *path, ctlfs_entry_t *c, int deep);
-void free_ctlnode(ctlfs_entry_t *ctlroot);
-void free_vars(void);
 int get_perm(uid_t uid, gid_t gid, struct stat st);
 int get_path_perm(const char *path);
 char *get_daddy(const char *path);

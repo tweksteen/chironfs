@@ -116,6 +116,5 @@ void disable_replica(int n);
 void enable_replica(int n);
 void print_version(void);
 void *start_ctl(void *arg);
-void *chiron_init(void);
 
 #endif /* CHIRONFS_FS_H */

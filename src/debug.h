@@ -29,8 +29,6 @@
 #include <time.h>
 #include <sys/time.h>
 
-#include "fs.h"
-
 struct logger {
         FILE *logfd;
         int quiet;
@@ -38,28 +36,24 @@ struct logger {
 
 extern struct logger logger;
 
+extern char *errtab[];
+
 #ifdef DEBUG
 #define dbg(param, ...) debug(param, ##__VA_ARGS__)
 #define timeval_subtract(res, x, y) timeval_sub(res, x, y)
 #define gettmday(t,p) gettimeofday(t,p)
 #define decl_tmvar(a,b,c) struct timeval a, b, c
-
 void debug(const char *s, ...);
 int timeval_sub (struct timeval *result, struct timeval *x, struct timeval *y);
-
 #else
-
 #define dbg(param, ...)
 #define timeval_subtract(res, x, y)
 #define gettmday(t,p)
 #define decl_tmvar(a,b,c)
-
 #endif
 
 void print_err(int, char *);
 void _log(char *, char *, int);
 void open_log(char *);
-
-extern char                   *errtab[];
 
 #endif /* CHIRONFS_DEBUG_H */
