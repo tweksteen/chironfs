@@ -387,6 +387,104 @@ static int chiron_open(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
+static int chiron_create(const char *path, mode_t mode,
+			 struct fuse_file_info *fi)
+{
+	char   *fname;
+	int     i, fd_ndx = -1, *fd, *err_list, err;
+	int     succ_cnt=0, fail_cnt=0;
+	decl_tmvar(t1, t2, t3);
+	decl_tmvar(t4, t5, t6);
+
+	dbg("\n@create %s\n", path);
+	drop_priv();
+	gettmday(&t1, NULL);
+
+	fd = calloc(config.max_replica, sizeof(int));
+	if (!fd) {
+		reacquire_priv();
+		return -ENOMEM;
+	}
+
+	err_list = calloc(config.max_replica, sizeof(int));
+	if (!err_list) {
+		free(fd);
+		reacquire_priv();
+		return -ENOMEM;
+	}
+
+	for(i = 0; i < config.max_replica; i++) {
+		gettmday(&t4, NULL);
+
+		if (config.replicas[i].disabled) {
+			continue;
+		}
+
+		fname = xlate(path, config.replicas[i].path);
+		if (!fname) {
+			fail_cnt++;
+			err_list[i] = -ENOMEM;
+			fd[i] = -1;
+			continue;
+		}
+
+		fd[i] = creat(fname, mode);
+		if (fd[i] < 0) {
+			fail_cnt++;
+			err_list[i] = -errno;
+			free(fname);
+			continue;
+		}
+
+		succ_cnt++;
+		free(fname);
+		dbg("create fd=%x, fi->flags=0%o\n", fd[i], fi->flags);
+
+		gettmday(&t5, NULL);
+		timeval_subtract(&t6, &t5, &t4);
+		dbg("create replica time %ld secs, %ld usecs\n",
+		    t6.tv_sec, t6.tv_usec);
+	}
+
+	/* Partial success, we disable broken replicas */
+	disable_faulty_replicas("create", succ_cnt, fail_cnt, err_list);
+
+	dbg("fd = %p [ ", fd);
+	for(i = 0; i < config.max_replica; i++)
+		dbg("%x ", fd[i]);
+	dbg("]\n");
+
+	/* All the replicas failed */
+	if (!succ_cnt) {
+		err = get_first_error(err_list);
+		free(err_list);
+		free(fd);
+		reacquire_priv();
+		return err;
+	}
+	free(err_list);
+
+	/* Try to allocate a slot inside the file descriptors pool */
+	if ((fd_ndx = fd_hashset(fd)) < 0) {
+		for(i = 0; i < config.max_replica; i++) {
+			if (!config.replicas[i].disabled && fd[i] >= 0) {
+				close(fd[i]);
+			}
+		}
+		free(fd);
+		reacquire_priv();
+		return -EMFILE;
+	}
+	fi->fh = fd_ndx;
+
+	gettmday(&t2, NULL);
+	timeval_subtract(&t3, &t2, &t1);
+	dbg("create total time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
+
+	reacquire_priv();
+	return 0;
+}
+
 static int chiron_release(const char *path, struct fuse_file_info *fi)
 {
 	int i, r;
@@ -1626,21 +1724,21 @@ void help(void)
 {
 	fprintf(stderr, "usage: chironfs [OPTIONS] path=path[=path[=path...]] mountpoint\n");
 	fprintf(stderr, "Arguments:\n"
-	     "    path=path[=path[=path...]]\n"
-	     "        This is the '=' separated list of paths where the replicas will\n"
-	     "        be stored. A path starting by ':' will have a low priority\n"
-	     "    mountpoint\n"
-	     "        The mountpoint through which the replicas will be accessed\n"
-	     "\n"
-	     "ChironFS options:\n"
-	     "    -c PATH, --ctl PATH\n"
-	     "        Mounts a proc-like filesystem in PATH enabling control operations\n"
-	     "    -h, --help            print this help\n"
-	     "    -l FILE, --log file   set a log filename\n"
-	     "    -q, --quiet           do not print error messages\n"
-	     "    -V, --version         print version of the software\n"
-	     "\n"
-	     );
+"    path=path[=path[=path...]]\n"
+"        This is the '=' separated list of paths where the replicas will\n"
+"        be stored. A path starting by ':' will have a low priority\n"
+"    mountpoint\n"
+"        The mountpoint through which the replicas will be accessed\n"
+"\n"
+"ChironFS options:\n"
+"    -c SOCKET_PATH, --ctl SOCKET_PATH\n"
+"        Create a UNIX socket to control the filesystem. This socket may be\n"
+"        used by chironctl to gather information on the filesystem\n"
+"    -h, --help            print this help\n"
+"    -l FILE, --log FILE   set a log filename\n"
+"    -q, --quiet           do not print error messages\n"
+"    -V, --version         print version of the software\n"
+"\n");
 }
 
 static struct fuse_operations chiron_oper = {
@@ -1651,6 +1749,7 @@ static struct fuse_operations chiron_oper = {
     .readlink     = chiron_readlink,
     .readdir      = chiron_readdir,
     .mknod        = chiron_mknod,
+    .create	  = chiron_create,
     .mkdir        = chiron_mkdir,
     .symlink      = chiron_symlink,
     .unlink       = chiron_unlink,
