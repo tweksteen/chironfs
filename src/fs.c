@@ -67,7 +67,7 @@ int fd_hashseekfree(unsigned fd_ndx)
 	unsigned i = fd_ndx;
 	decl_tmvar(t1, t2, t3);
 
-	gettmday(&t1,NULL);
+	gettmday(&t1, NULL);
 
 	dbg("bufsz=%#lx \thash=%#lx\n", config.fd_buf_size, i);
 
@@ -78,7 +78,7 @@ int fd_hashseekfree(unsigned fd_ndx)
 		i++;
 	}
 	if (i<config.fd_buf_size) {
-		dbg("used=%#lx\n",i);
+		dbg("used=%#lx\n", i);
 
 		return(i);
 	}
@@ -90,12 +90,12 @@ int fd_hashseekfree(unsigned fd_ndx)
 		i++;
 	}
 
-	gettmday(&t2,NULL);
-	timeval_subtract(&t3,&t2,&t1);
-	dbg("hash time %ld secs, %ld usecs\n",t3.tv_sec,t3.tv_usec);
+	gettmday(&t2, NULL);
+	timeval_subtract(&t3, &t2, &t1);
+	dbg("hash time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
 
 	if (i<fd_ndx) {
-		dbg("\tused=%#lx\n",i);
+		dbg("\tused=%#lx\n", i);
 		return(i);
 	}
 
@@ -103,7 +103,7 @@ int fd_hashseekfree(unsigned fd_ndx)
 	// We expect that it never happens because we set
 	// the buffer to hold the file-max (the max opened
 	// file system-wide)
-	_log("hash allocation","too many opened files",0);
+	_log("hash allocation", "too many opened files", 0);
 	return(CHIRONFS_ERR_TOO_MANY_FOPENS);
 }
 
@@ -142,10 +142,10 @@ char *xlate(const char *fname, char *rpath)
 		flen = strlen(fname);
 		rname = malloc(1+flen);
 		if (rname) {
-			if (!strcmp(fname,"/")) {
-				strcpy(rname,currdir);
+			if (!strcmp(fname, "/")) {
+				strcpy(rname, currdir);
 			} else {
-				strcpy(rname,fname+1);
+				strcpy(rname, fname+1);
 			}
 		}
 	} else {
@@ -154,10 +154,10 @@ char *xlate(const char *fname, char *rpath)
 		rname = malloc(1 + rlen + flen);
 		if (rname) {
 			strcpy(rname, rpath);
-			strcpy(rname + rlen,fname);
+			strcpy(rname + rlen, fname);
 		}
 	}
-	dbg("xlate %s\n",rname);
+	dbg("xlate %s\n", rname);
 	return rname;
 }
 
@@ -165,7 +165,7 @@ int choose_replica(int try)
 {
 	unsigned int i;
 	decl_tmvar(t1, t2, t3);
-	gettmday(&t1,NULL);
+	gettmday(&t1, NULL);
 
 	if (!try) {
 		config.curr_replica_high = (config.curr_replica_high + 1) %
@@ -177,9 +177,9 @@ int choose_replica(int try)
 			config.max_replica_low;
 	}
 
-	gettmday(&t2,NULL);
-	timeval_subtract(&t3,&t2,&t1);
-	dbg("choose_replica time %ld secs, %ld usecs\n",t3.tv_sec,t3.tv_usec);
+	gettmday(&t2, NULL);
+	timeval_subtract(&t3, &t2, &t1);
+	dbg("choose_replica time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
 
 	if (try < config.max_replica_high) {
 		i = (config.curr_replica_high + try) % config.max_replica_high;
@@ -300,7 +300,7 @@ static int chiron_open(const char *path, struct fuse_file_info *fi)
 
 	dbg("\n@open %s\n", path);
 	drop_priv();
-	gettmday(&t1,NULL);
+	gettmday(&t1, NULL);
 
 	fd = calloc(config.max_replica, sizeof(int));
 	if (!fd) {
@@ -316,7 +316,7 @@ static int chiron_open(const char *path, struct fuse_file_info *fi)
 	}
 
 	for(i = 0; i < config.max_replica; i++) {
-		gettmday(&t4,NULL);
+		gettmday(&t4, NULL);
 
 		if (config.replicas[i].disabled) {
 			continue;
@@ -342,10 +342,10 @@ static int chiron_open(const char *path, struct fuse_file_info *fi)
 		free(fname);
 		dbg("opened fd=%x, fi->flags=0%o\n", fd[i], fi->flags);
 
-		gettmday(&t5,NULL);
-		timeval_subtract(&t6,&t5,&t4);
+		gettmday(&t5, NULL);
+		timeval_subtract(&t6, &t5, &t4);
 		dbg("open replica time %ld secs, %ld usecs\n",
-		    t6.tv_sec,t6.tv_usec);
+		    t6.tv_sec, t6.tv_usec);
 	}
 
 	/* Partial success, we disable broken replicas */
@@ -379,8 +379,8 @@ static int chiron_open(const char *path, struct fuse_file_info *fi)
 	}
 	fi->fh = fd_ndx;
 
-	gettmday(&t2,NULL);
-	timeval_subtract(&t3,&t2,&t1);
+	gettmday(&t2, NULL);
+	timeval_subtract(&t3, &t2, &t1);
 	dbg("open total time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
 
 	reacquire_priv();
@@ -392,8 +392,8 @@ static int chiron_release(const char *path, struct fuse_file_info *fi)
 	int i, r;
 	decl_tmvar(t1, t2, t3);
 
-	dbg("\n@release %#lx\n",fi->fh);
-	gettmday(&t1,NULL);
+	dbg("\n@release %#lx\n", fi->fh);
+	gettmday(&t1, NULL);
 	drop_priv();
 
 	if (!config.tab_fd.fd[fi->fh]) {
@@ -410,9 +410,9 @@ static int chiron_release(const char *path, struct fuse_file_info *fi)
 	free(config.tab_fd.fd[fi->fh]);
 	config.tab_fd.fd[fi->fh] = NULL;
 
-	gettmday(&t2,NULL);
-	timeval_subtract(&t3,&t2,&t1);
-	dbg("release time %ld secs, %ld usecs\n",t3.tv_sec,t3.tv_usec);
+	gettmday(&t2, NULL);
+	timeval_subtract(&t3, &t2, &t1);
+	dbg("release time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
 
 	reacquire_priv();
 	return r;
@@ -428,7 +428,7 @@ static int chiron_read(const char *path, char *buf, size_t size,
 
 	dbg("\n@read %x\n", fi->fh);
 	drop_priv();
-	gettmday(&t1,NULL);
+	gettmday(&t1, NULL);
 
 	if (!config.tab_fd.fd[fi->fh]) {
 		reacquire_priv();
@@ -468,9 +468,9 @@ static int chiron_read(const char *path, char *buf, size_t size,
 	}
 	free(err_list);
 
-	gettmday(&t2,NULL);
-	timeval_subtract(&t3,&t2,&t1);
-	dbg("read time %ld secs, %ld usecs\n",t3.tv_sec,t3.tv_usec);
+	gettmday(&t2, NULL);
+	timeval_subtract(&t3, &t2, &t1);
+	dbg("read time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
 
 	reacquire_priv();
 	return r;
@@ -485,7 +485,7 @@ static int chiron_write(const char *path, const char *buf, size_t size,
 
 	dbg("\n@write %#lx\n", fi->fh);
 	drop_priv();
-	gettmday(&t1,NULL);
+	gettmday(&t1, NULL);
 
 	if (!config.tab_fd.fd[fi->fh]) {
 		reacquire_priv();
@@ -525,9 +525,9 @@ static int chiron_write(const char *path, const char *buf, size_t size,
 	}
 	free(err_list);
 
-	gettmday(&t2,NULL);
-	timeval_subtract(&t3,&t2,&t1);
-	dbg("write total time %ld secs, %ld usecs\n",t3.tv_sec,t3.tv_usec);
+	gettmday(&t2, NULL);
+	timeval_subtract(&t3, &t2, &t1);
+	dbg("write total time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
 
 	reacquire_priv();
 	return w_max;
@@ -544,7 +544,7 @@ static int chiron_getattr(const char *path, struct stat *stbuf)
 
 	dbg("\n@getattr %s\n", path);
 	drop_priv();
-	gettmday(&t1,NULL);
+	gettmday(&t1, NULL);
 
 	err_list = calloc(config.max_replica, sizeof(int));
 	if (!err_list) {
@@ -586,8 +586,8 @@ static int chiron_getattr(const char *path, struct stat *stbuf)
 	}
 	free(err_list);
 
-	gettmday(&t2,NULL);
-	timeval_subtract(&t3,&t2,&t1);
+	gettmday(&t2, NULL);
+	timeval_subtract(&t3, &t2, &t1);
 	dbg("getattr total time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
 
 	reacquire_priv();
@@ -604,7 +604,7 @@ static int chiron_access(const char *path, int mask)
 
 	dbg("\n@access %s\n", path);
 	drop_priv();
-	gettmday(&t1,NULL);
+	gettmday(&t1, NULL);
 
 	err_list = calloc(config.max_replica, sizeof(int));
 	if (!err_list) {
@@ -646,8 +646,8 @@ static int chiron_access(const char *path, int mask)
 	}
 	free(err_list);
 
-	gettmday(&t2,NULL);
-	timeval_subtract(&t3,&t2,&t1);
+	gettmday(&t2, NULL);
+	timeval_subtract(&t3, &t2, &t1);
 	dbg("access total time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
 
 	reacquire_priv();
@@ -671,9 +671,9 @@ static int chiron_readlink(const char *path, char *buf, size_t size)
 	int *err_list, err;
 	decl_tmvar(t1, t2, t3);
 
-	dbg("\n@readlink %s\n",path);
+	dbg("\n@readlink %s\n", path);
 	drop_priv();
-	gettmday(&t1,NULL);
+	gettmday(&t1, NULL);
 
 	err_list = calloc(config.max_replica, sizeof(int));
 	if (!err_list) {
@@ -718,7 +718,7 @@ static int chiron_readlink(const char *path, char *buf, size_t size)
 
 	gettmday(&t2, NULL);
 	timeval_subtract(&t3, &t2, &t1);
-	dbg("readlink time %ld secs, %ld usecs\n",t3.tv_sec,t3.tv_usec);
+	dbg("readlink time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
 
 	reacquire_priv();
 	return 0;
@@ -736,7 +736,7 @@ static int chiron_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	int           *err_list, err;
 	decl_tmvar(t1, t2, t3);
 
-	dbg("\n@readdir %s offset=%ld\n",path,offset);
+	dbg("\n@readdir %s offset=%ld\n", path, offset);
 	drop_priv();
 	gettmday(&t1, NULL);
 
@@ -788,7 +788,7 @@ static int chiron_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	free(err_list);
 
 	gettmday(&t2, NULL);
-	timeval_subtract(&t3, &t2 ,&t1);
+	timeval_subtract(&t3, &t2, &t1);
 	dbg("readdir time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
 
 	reacquire_priv();
@@ -803,7 +803,7 @@ static int chiron_mknod(const char *path_orig, mode_t mode, dev_t rdev)
 
 	dbg("\n@mknod %s\n", path_orig);
 	drop_priv();
-	gettmday(&t1,NULL);
+	gettmday(&t1, NULL);
 
 	err_list = calloc(config.max_replica, sizeof(int));
 	if (!err_list) {
@@ -840,7 +840,7 @@ static int chiron_mknod(const char *path_orig, mode_t mode, dev_t rdev)
 				free(fname);
 				continue;
 			}
-			dbg("mknod/fifo+chown: %s\n",path_orig);
+			dbg("mknod/fifo+chown: %s\n", path_orig);
 
 		} else {
 			free(fname);
@@ -862,7 +862,7 @@ static int chiron_mknod(const char *path_orig, mode_t mode, dev_t rdev)
 	free(err_list);
 
 	gettmday(&t2, NULL);
-	timeval_subtract(&t3, &t2 ,&t1);
+	timeval_subtract(&t3, &t2, &t1);
 	dbg("mknod time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
 
 	reacquire_priv();
@@ -879,7 +879,7 @@ static int chiron_truncate(const char *path_orig, off_t size)
 
 	dbg("\n@truncate %s\n", path_orig);
 	drop_priv();
-	gettmday(&t1,NULL);
+	gettmday(&t1, NULL);
 
 	err_list = calloc(config.max_replica, sizeof(int));
 	if (!err_list) {
@@ -918,8 +918,8 @@ static int chiron_truncate(const char *path_orig, off_t size)
 	}
 	free(err_list);
 
-	gettmday(&t2,NULL);
-	timeval_subtract(&t3,&t2,&t1);
+	gettmday(&t2, NULL);
+	timeval_subtract(&t3, &t2, &t1);
 	dbg("truncate time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
 
 	reacquire_priv();
@@ -935,7 +935,7 @@ static int chiron_chmod(const char *path_orig, mode_t mode)
 
 	dbg("\n@chmod %s %o\n", path_orig, mode);
 	drop_priv();
-	gettmday(&t1,NULL);
+	gettmday(&t1, NULL);
 
 	err_list = calloc(config.max_replica, sizeof(int));
 	if (!err_list) {
@@ -974,8 +974,8 @@ static int chiron_chmod(const char *path_orig, mode_t mode)
 	}
 	free(err_list);
 
-	gettmday(&t2,NULL);
-	timeval_subtract(&t3,&t2,&t1);
+	gettmday(&t2, NULL);
+	timeval_subtract(&t3, &t2, &t1);
 	dbg("chmod time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
 
 	reacquire_priv();
@@ -992,7 +992,7 @@ static int chiron_chown(const char *path_orig, uid_t uid, gid_t gid)
 
 	dbg("\n@chown %s uid=%u gid=%u\n", path_orig, uid, gid);
 	drop_priv();
-	gettmday(&t1,NULL);
+	gettmday(&t1, NULL);
 
 	err_list = calloc(config.max_replica, sizeof(int));
 	if (!err_list) {
@@ -1031,8 +1031,8 @@ static int chiron_chown(const char *path_orig, uid_t uid, gid_t gid)
 	}
 	free(err_list);
 
-	gettmday(&t2,NULL);
-	timeval_subtract(&t3,&t2,&t1);
+	gettmday(&t2, NULL);
+	timeval_subtract(&t3, &t2, &t1);
 	dbg("chown time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
 
 	reacquire_priv();
@@ -1049,7 +1049,7 @@ static int chiron_utime(const char *path_orig, struct utimbuf *buf)
 
 	dbg("\n@utime %s\n", path_orig);
 	drop_priv();
-	gettmday(&t1,NULL);
+	gettmday(&t1, NULL);
 
 	err_list = calloc(config.max_replica, sizeof(int));
 	if (!err_list) {
@@ -1088,8 +1088,8 @@ static int chiron_utime(const char *path_orig, struct utimbuf *buf)
 	}
 	free(err_list);
 
-	gettmday(&t2,NULL);
-	timeval_subtract(&t3,&t2,&t1);
+	gettmday(&t2, NULL);
+	timeval_subtract(&t3, &t2, &t1);
 	dbg("utime time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
 
 	reacquire_priv();
@@ -1106,7 +1106,7 @@ static int chiron_rmdir(const char *path_orig)
 
 	dbg("\n@rmdir %s\n", path_orig);
 	drop_priv();
-	gettmday(&t1,NULL);
+	gettmday(&t1, NULL);
 
 	err_list = calloc(config.max_replica, sizeof(int));
 	if (!err_list) {
@@ -1145,8 +1145,8 @@ static int chiron_rmdir(const char *path_orig)
 	}
 	free(err_list);
 
-	gettmday(&t2,NULL);
-	timeval_subtract(&t3,&t2,&t1);
+	gettmday(&t2, NULL);
+	timeval_subtract(&t3, &t2, &t1);
 	dbg("rmdir time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
 
 	reacquire_priv();
@@ -1163,7 +1163,7 @@ static int chiron_unlink(const char *path_orig)
 
 	dbg("\n@unlink %s\n", path_orig);
 	drop_priv();
-	gettmday(&t1,NULL);
+	gettmday(&t1, NULL);
 
 	err_list = calloc(config.max_replica, sizeof(int));
 	if (!err_list) {
@@ -1202,8 +1202,8 @@ static int chiron_unlink(const char *path_orig)
 	}
 	free(err_list);
 
-	gettmday(&t2,NULL);
-	timeval_subtract(&t3,&t2,&t1);
+	gettmday(&t2, NULL);
+	timeval_subtract(&t3, &t2, &t1);
 	dbg("unlink time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
 
 	reacquire_priv();
@@ -1218,9 +1218,9 @@ static int chiron_mkdir(const char *path_orig, mode_t mode)
 	int    *err_list, err;
 	decl_tmvar(t1, t2, t3);
 
-	dbg("\n@mkdir %s\n",path_orig);
+	dbg("\n@mkdir %s\n", path_orig);
 	drop_priv();
-	gettmday(&t1,NULL);
+	gettmday(&t1, NULL);
 
 	err_list = calloc(config.max_replica, sizeof(int));
 	if (!err_list) {
@@ -1259,8 +1259,8 @@ static int chiron_mkdir(const char *path_orig, mode_t mode)
 	}
 	free(err_list);
 
-	gettmday(&t2,NULL);
-	timeval_subtract(&t3,&t2,&t1);
+	gettmday(&t2, NULL);
+	timeval_subtract(&t3, &t2, &t1);
 	dbg("mkdir time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
 
 	reacquire_priv();
@@ -1275,7 +1275,7 @@ static int chiron_symlink(const char *from, const char *to)
 
 	dbg("\n@symlink %s->%s\n", from, to);
 	drop_priv();
-	gettmday(&t1,NULL);
+	gettmday(&t1, NULL);
 
 	err_list = calloc(config.max_replica, sizeof(int));
 	if (!err_list) {
@@ -1314,8 +1314,8 @@ static int chiron_symlink(const char *from, const char *to)
 	}
 	free(err_list);
 
-	gettmday(&t2,NULL);
-	timeval_subtract(&t3,&t2,&t1);
+	gettmday(&t2, NULL);
+	timeval_subtract(&t3, &t2, &t1);
 	dbg("symlink time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
 
 	reacquire_priv();
@@ -1330,7 +1330,7 @@ static int chiron_rename(const char *from, const char *to)
 
 	dbg("\n@rename %s->%s\n", from, to);
 	drop_priv();
-	gettmday(&t1,NULL);
+	gettmday(&t1, NULL);
 
 	err_list = calloc(config.max_replica, sizeof(int));
 	if (!err_list) {
@@ -1348,7 +1348,7 @@ static int chiron_rename(const char *from, const char *to)
 			continue;
 		}
 
-		fname_to = xlate(to,config.replicas[i].path);
+		fname_to = xlate(to, config.replicas[i].path);
 		if (!fname_to) {
 			free(fname_from);
 			continue;
@@ -1377,8 +1377,8 @@ static int chiron_rename(const char *from, const char *to)
 	}
 	free(err_list);
 
-	gettmday(&t2,NULL);
-	timeval_subtract(&t3,&t2,&t1);
+	gettmday(&t2, NULL);
+	timeval_subtract(&t3, &t2, &t1);
 	dbg("rename time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
 
 	reacquire_priv();
@@ -1394,7 +1394,7 @@ static int chiron_link(const char *from, const char *to)
 
 	dbg("\n@link %s->%s\n", from, to);
 	drop_priv();
-	gettmday(&t1,NULL);
+	gettmday(&t1, NULL);
 
 	err_list = calloc(config.max_replica, sizeof(int));
 	if (!err_list) {
@@ -1412,7 +1412,7 @@ static int chiron_link(const char *from, const char *to)
 			continue;
 		}
 
-		fname_to = xlate(to,config.replicas[i].path);
+		fname_to = xlate(to, config.replicas[i].path);
 		if (!fname_to) {
 			free(fname_from);
 			continue;
@@ -1441,8 +1441,8 @@ static int chiron_link(const char *from, const char *to)
 	}
 	free(err_list);
 
-	gettmday(&t2,NULL);
-	timeval_subtract(&t3,&t2,&t1);
+	gettmday(&t2, NULL);
+	timeval_subtract(&t3, &t2, &t1);
 	dbg("link time %ld secs, %ld usecs\n", t3.tv_sec, t3.tv_usec);
 
 	reacquire_priv();
