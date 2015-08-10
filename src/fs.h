@@ -33,8 +33,6 @@
 #include <dirent.h>
 #include <errno.h>
 #include <time.h>
-#include <pwd.h>
-#include <grp.h>
 #include <sys/time.h>
 #include <sys/stat.h>
 #include <libgen.h>
@@ -43,6 +41,8 @@
 #include <limits.h>
 #include <sys/types.h>
 #include <sys/statvfs.h>
+#include <sys/un.h>
+#include <sys/socket.h>
 
 #ifdef HAVE_SETXATTR
 #include <sys/xattr.h>
@@ -76,8 +76,7 @@ struct chironfs_config {
 	unsigned int *round_robin_low;
 	replica_t     *replicas;
 	char         *mountpoint;
-	char         *chironctl_mountpoint;
-	char         *chironctl_execname;
+	char         *ctl_socket_name;
 	fd_t         tab_fd;
 	uid_t	     uid;
 	gid_t        gid;
@@ -92,7 +91,7 @@ extern struct chironfs_config config;
  * is finished.
  */
 struct chironfs_options {
-	char *ctl_mountpoint;
+	char *ctl_socket_name;
 	char *replica_args;
 	char *logname;
 	char *mountpoint;
@@ -106,6 +105,17 @@ enum {
 	KEY_VERSION
 };
 
+/*
+ * Actions exposed via control socket
+ */
+enum {
+	GET_MAX_REPLICA,
+	GET_REPLICA_STATUS,
+	GET_REPLICA_PATH,
+	GET_REPLICA_PRIORITY,
+	DONE
+};
+
 void help(void);
 unsigned hash_fd(unsigned fd_main);
 int fd_hashseekfree(unsigned fd_ndx);
@@ -115,6 +125,6 @@ int choose_replica(int try);
 void disable_replica(int n);
 void enable_replica(int n);
 void print_version(void);
-void *start_ctl(void *arg);
+void *ctl_server(void *arg);
 
 #endif /* CHIRONFS_FS_H */

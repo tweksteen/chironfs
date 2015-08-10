@@ -28,8 +28,7 @@ struct chironfs_config config = {
 	.round_robin_low = NULL,
 	.replicas = NULL,
 	.mountpoint = NULL,
-	.chironctl_mountpoint = NULL,
-	.chironctl_execname = "../src/chironctl",
+	.ctl_socket_name = NULL,
 	.tab_fd = { NULL, 0 },
 	.uid = 0,
 	.gid = 0,
@@ -38,8 +37,8 @@ struct chironfs_config config = {
 
 struct chironfs_options options;
 static struct fuse_opt chironfs_opts[] = {
-	CHIRON_OPT("--ctl %s",	       ctl_mountpoint, 0),
-	CHIRON_OPT("-c %s",	       ctl_mountpoint, 0),
+	CHIRON_OPT("--ctl %s",	       ctl_socket_name, 0),
+	CHIRON_OPT("-c %s",	       ctl_socket_name, 0),
 	CHIRON_OPT("--log %s",	       logname, 0),
 	CHIRON_OPT("-l %s",	       logname, 0),
 	CHIRON_OPT("--quiet",	       quiet, 1),
@@ -214,8 +213,8 @@ void enable_replica(int n)
 
 
 /*
- * Disable faulty replicas if and only if there has been at least one 
- * replica which succeeded.  
+ * Disable faulty replicas if and only if there has been at least one
+ * replica which succeeded.
  */
 void disable_faulty_replicas(char *operation, int succ_cnt, int fail_cnt,
 			     int *err_list)
@@ -1462,27 +1461,10 @@ static int chiron_link(const char *from, const char *to)
  */
 void *chiron_init(struct fuse_conn_info *conn)
 {
-	struct stat st;
-	pthread_t   thand;
-	int         i;
+	pthread_t thand;
 
-	if (config.chironctl_mountpoint) {
-		i = stat(config.chironctl_mountpoint, &st);
-		dbg("ctl: stat=%d\n", i);
-		if (i == ENOENT) {
-			dbg("ctl: creating control directory\n");
-			i = mkdir(config.chironctl_mountpoint,
-				  S_IRUSR | S_IXUSR);
-			dbg("ctl: mkdir=%d\n",i);
-		}
-
-		if (i) {
-			dbg("\nctl: nomkdir");
-			_log("control directory", config.chironctl_mountpoint, i);
-				return NULL;
-		}
-
-		if (pthread_create(&thand,NULL,start_ctl, NULL) != 0) {
+	if (config.ctl_socket_name) {
+		if (pthread_create(&thand, NULL, ctl_server, NULL) != 0) {
 			// TODO: die
 			return NULL;
 		}
@@ -1490,106 +1472,120 @@ void *chiron_init(struct fuse_conn_info *conn)
 	return NULL;
 }
 
-
-void *start_ctl(void *arg)
+int process_request(int cfd)
 {
-	// parent writes, son reads
-	int ctlpipe_parson[2];
+	int res;
+	unsigned int c;
+	size_t plen;
+	char code;
 
-	// son writes, parent reads
-	int ctlpipe_sonpar[2];
+	res = read(cfd, &code, 1);
+	if (res != 1) {
+		return -1;
+	}
+	dbg("@process_request code=%x\n", code);
+	switch(code) {
+	case GET_MAX_REPLICA:
+		res = write(cfd, &config.max_replica, sizeof(unsigned int));
+		if (res != sizeof(unsigned int)) {
+			dbg("Wrong size of max_replica\n");
+			return -1;
+		}
+		break;
+	case GET_REPLICA_STATUS:
+		res = read(cfd, &c, sizeof(unsigned int));
+		if (res != sizeof(unsigned int) || c >= config.max_replica) {
+			dbg("Wrong replica id\n");
+			return -1;
+		}
+		res = write(cfd, &config.replicas[c].disabled, sizeof(int));
+		if (res != sizeof(int)) {
+			dbg("Wrong replica status write\n");
+			return -1;
+		}
+		break;
+	case GET_REPLICA_PATH:
+		res = read(cfd, &c, sizeof(unsigned int));
+		if (res != sizeof(unsigned int) || c >= config.max_replica) {
+			dbg("Wrong replica id\n");
+			return -1;
+		}
+		plen = config.replicas[c].pathlen;
+		res = write(cfd, &plen, sizeof(size_t));
+		if (res != sizeof(size_t)) {
+			dbg("Wrong path length write\n");
+			return -1;
+		}
+		res = write(cfd, config.replicas[c].path, plen);
+		if (res != plen) {
+			dbg("Wrong path write\n");
+			return -1;
+		}
+		break;
+	case GET_REPLICA_PRIORITY:
+		res = read(cfd, &c, sizeof(unsigned int));
+		if (res != sizeof(unsigned int) || c >= config.max_replica) {
+			dbg("Wrong replica id\n");
+			return -1;
+		}
+		res = write(cfd, &config.replicas[c].priority, sizeof(int));
+		if (res != sizeof(int)) {
+			dbg("Wrong replica priority write\n");
+			return -1;
+		}
+		break;
+	case DONE:
+		return -1;
+	default:
+		break;
+	}
+	return 0;
+}
 
-	// parent decriptors
-	FILE *fi, *fo;
+/*
+ * Server
+ */
+void *ctl_server(void *arg)
+{
+	int sfd, cfd;
+	struct sockaddr_un addr;
 
-	char *buf = NULL;
-	int   i, sz, someerr;
+	dbg("Control server started\n");
 
-	dbg("control thread: started\n");
-
-	if (pipe(ctlpipe_parson)<0) {
-		pthread_exit("error");
+	sfd = socket(AF_LOCAL, SOCK_STREAM, 0);
+	if (sfd == -1) {
+		perror("socket creation failed");
+		exit(EXIT_FAILURE);
 	}
 
-	if (pipe(ctlpipe_sonpar)<0) {
-		pthread_exit("error");
+	memset(&addr, 0, sizeof(struct sockaddr_un));
+	addr.sun_family = AF_UNIX;
+	strncpy(addr.sun_path, config.ctl_socket_name,
+		sizeof(addr.sun_path) - 1);
+
+	if (bind(sfd, (struct sockaddr *) &addr,
+		 sizeof(struct sockaddr_un)) == -1) {
+		perror("bind failed");
+		exit(EXIT_FAILURE);
 	}
 
-	pid_t pid;
-	if ((pid = fork())==0) {
-		// I am the child
-		close(ctlpipe_parson[1]);
-		close(ctlpipe_sonpar[0]);
-		dbg("fork: I am the child\n");
-
-		if (ctlpipe_parson[0] != STDIN_FILENO) {
-			dup2 (ctlpipe_parson[0], STDIN_FILENO);
-			close (ctlpipe_parson[0]);
-		}
-		if (ctlpipe_sonpar[1] != STDOUT_FILENO) {
-			dup2 (ctlpipe_sonpar[1], STDOUT_FILENO);
-			close (ctlpipe_sonpar[1]);
-		}
-		// After forking, run the prog who implements the
-		// proc-like filesystem to control the main chironfs
-		dbg("child: execing %s\n",config.chironctl_execname);
-		execlp(config.chironctl_execname,config.chironctl_execname,NULL);
-		dbg("child: failed execing %s error is %d\n",config.chironctl_execname,errno);
-	} else if (pid < 0) {
-		pthread_exit("error");
-	}
-	// I am the parent
-	close(ctlpipe_parson[0]);
-	close(ctlpipe_sonpar[1]);
-
-	dbg("fork: I am the parent\n");
-	fi = fdopen(ctlpipe_sonpar[0],"r");
-	fo = fdopen(ctlpipe_parson[1],"w");
-
-	while (1) {
-		someerr = read_a_line(&buf,&sz,fi);
-		if (someerr) {
-			pthread_exit("error");
-		}
-		dbg("parent: got a msg %s\n",buf);
-		if (strncmp(buf,"stat:",5)==0) {
-			// status request
-			for(i=0;i<config.max_replica;++i) {
-				sscanf(buf+5,"%02X",&i);
-				if ((i>=0)&&(i<config.max_replica)) {
-					fprintf(fo,"0001%1X",((int)config.replicas[i].disabled));
-					fflush(fo);
-					break;
-				}
-			}
-		} else if (strncmp(buf,"disable:",8)==0) {
-			// put replica in inactive state
-			sscanf(buf+8,"%2X",&i);
-			if ((i>=0)&&(i<config.max_replica)) {
-				disable_replica(-i);
-				fprintf(fo,"0002OK");
-			} else {
-				fprintf(fo,"0003ERR");
-			}
-			fflush(fo);
-		} else if (strcmp(buf,"info")==0) {
-			// get fs info
-			fprintf(fo,"%4X%s",(unsigned int)strlen(config.mountpoint),config.mountpoint);
-			fflush(fo);
-			fprintf(fo,"%4X%s",(unsigned int)strlen(config.chironctl_mountpoint),config.chironctl_mountpoint);
-			fflush(fo);
-			fprintf(fo,"0002%02X",config.max_replica);
-			fflush(fo);
-			for(i=0;i<config.max_replica;++i) {
-				fprintf(fo,"%4X%s",(unsigned int)config.replicas[i].pathlen,config.replicas[i].path);
-				fflush(fo);
-			}
-		} else {
-			fprintf(fo,"0003ERR");
-			fflush(fo);
-		}
+	if (listen(sfd, 5) == -1) {
+		perror("listen failed");
+		exit(EXIT_FAILURE);
 	}
 
+	for(;;) {
+		cfd = accept(sfd, NULL, NULL);
+		if (cfd == -1) {
+			perror("accept failed");
+			exit(EXIT_FAILURE);
+		}
+
+		for(;;) {
+			if(process_request(cfd))
+				break;
+		}
+	}
 }
 
 void print_version(void)
@@ -1699,7 +1695,7 @@ int main(int argc, char *argv[])
 
 	dbg("Starting\n");
 
-	if(fuse_opt_parse(&args, &options, chironfs_opts,
+	if (fuse_opt_parse(&args, &options, chironfs_opts,
 			  chironfs_opt_proc) == -1)
 		exit(1);
 
@@ -1714,14 +1710,14 @@ int main(int argc, char *argv[])
 	dbg("options.replica_args = %s\n", options.replica_args);
 	dbg("options.mountpoint = %s\n", options.mountpoint);
 	dbg("options.logname = %s\n", options.logname);
-	dbg("options.ctl_mountpoint = %s\n", options.ctl_mountpoint);
+	dbg("options.ctl_socket_name = %s\n", options.ctl_socket_name);
 
-	if(!options.replica_args) {
+	if (!options.replica_args) {
 		print_err(EINVAL, "Replica cannot be empty");
 		exit(1);
 	}
 
-	if(options.mountpoint) {
+	if (options.mountpoint) {
 		config.mountpoint = options.mountpoint;
 	}
 	else {
@@ -1729,14 +1725,16 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-	if(options.logname) {
+	if (options.logname) {
 		open_log(options.logname);
 	}
 
 	config.uid = geteuid();
 	config.gid = getegid();
 
-	config.chironctl_mountpoint = realpath(options.ctl_mountpoint, NULL);
+	if (options.ctl_socket_name) {
+		config.ctl_socket_name = options.ctl_socket_name;
+	}
 
 	do_mount(options.replica_args, options.mountpoint);
 	res = fuse_main(args.argc, args.argv, &chiron_oper, NULL);
