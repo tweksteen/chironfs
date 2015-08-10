@@ -455,6 +455,7 @@ static int chiron_read(const char *path, char *buf, size_t size,
 			continue;
 		}
 		succ_cnt++;
+		config.replicas[replica].totrd++;
 		break;
 	}
 
@@ -511,6 +512,7 @@ static int chiron_write(const char *path, const char *buf, size_t size,
 			continue;
 		}
 		w_max = max(w, w_max);
+		config.replicas[i].totwr++;
 		succ_cnt++;
 
 	}
@@ -1519,6 +1521,32 @@ int process_request(int cfd)
 		res = write(cfd, config.replicas[c].path, plen);
 		if (res != plen) {
 			dbg("Wrong path write\n");
+			return -1;
+		}
+		break;
+	case GET_REPLICA_TOTAL_READ:
+		res = read(cfd, &c, sizeof(unsigned int));
+		if (res != sizeof(unsigned int) || c >= config.max_replica) {
+			dbg("Wrong replica id\n");
+			return -1;
+		}
+		res = write(cfd, &config.replicas[c].totrd,
+			    sizeof(unsigned long long));
+		if (res != sizeof(unsigned long long)) {
+			dbg("Wrong replica total read write\n");
+			return -1;
+		}
+		break;
+	case GET_REPLICA_TOTAL_WRITE:
+		res = read(cfd, &c, sizeof(unsigned int));
+		if (res != sizeof(unsigned int) || c >= config.max_replica) {
+			dbg("Wrong replica id\n");
+			return -1;
+		}
+		res = write(cfd, &config.replicas[c].totwr,
+			    sizeof(unsigned long long));
+		if (res != sizeof(unsigned long long)) {
+			dbg("Wrong replica total write write\n");
 			return -1;
 		}
 		break;

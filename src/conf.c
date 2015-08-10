@@ -142,8 +142,10 @@ int do_mount(char *filesystems, char *mountpoint)
 	}
 	for(i=0;i < config.max_replica;++i) {
 		config.replicas[i].path     = NULL;
-		config.replicas[i].disabled = (time_t) 0;
+		config.replicas[i].disabled = 0;
 		config.replicas[i].priority = 0;
+		config.replicas[i].totrd = 0;
+		config.replicas[i].totwr = 0;
 	}
 
 	// Allocate round_robin_high

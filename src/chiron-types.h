@@ -6,7 +6,7 @@
 
 typedef struct {
    char   *path;
-   long    totrd, totwr;
+   unsigned long long totrd, totwr;
    /*
    struct {
       int    old_rd_avg, curr_rd_avg, curr_rd, old_wr_avg, curr_wr_avg, curr_wr;

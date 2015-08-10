@@ -74,6 +74,56 @@ int get_priority(int fd, unsigned int replica)
 	return priority;
 }
 
+unsigned long long get_total_read(int fd, unsigned int replica)
+{
+	int res;
+	char code;
+	unsigned long long total_read;
+
+	code = GET_REPLICA_TOTAL_READ;
+	res = write(fd, &code, 1);
+	if (res != 1) {
+		fprintf(stderr, "Unable to send command\n");
+		exit(EXIT_FAILURE);
+	}
+	res = write(fd, &replica, sizeof(unsigned int));
+	if (res != sizeof(unsigned int)) {
+		fprintf(stderr, "Unable to send replica ID\n");
+		exit(EXIT_FAILURE);
+	}
+	res = read(fd, &total_read, sizeof(unsigned long long));
+	if (res != sizeof(unsigned long long)) {
+		fprintf(stderr, "Unable to receive replica total read\n");
+		exit(EXIT_FAILURE);
+	}
+	return total_read;
+}
+
+unsigned long long get_total_write(int fd, unsigned int replica)
+{
+	int res;
+	char code;
+	unsigned long long total_write;
+
+	code = GET_REPLICA_TOTAL_WRITE;
+	res = write(fd, &code, 1);
+	if (res != 1) {
+		fprintf(stderr, "Unable to send command\n");
+		exit(EXIT_FAILURE);
+	}
+	res = write(fd, &replica, sizeof(unsigned int));
+	if (res != sizeof(unsigned int)) {
+		fprintf(stderr, "Unable to send replica ID\n");
+		exit(EXIT_FAILURE);
+	}
+	res = read(fd, &total_write, sizeof(unsigned long long));
+	if (res != sizeof(unsigned long long)) {
+		fprintf(stderr, "Unable to receive replica total write\n");
+		exit(EXIT_FAILURE);
+	}
+	return total_write;
+}
+
 int get_status(int fd, unsigned int replica)
 {
 	int res;
@@ -151,6 +201,8 @@ int main(int argc, char *argv[])
 		printf("\t\tstatus: %s\n", get_status(sfd, i) ? "disabled" : "enabled");
 		printf("\t\tpriority: %s\n", get_priority(sfd, i) ?
 		       "low" : "high");
+		printf("\t\t#read: %lld\n",  get_total_read(sfd, i));
+		printf("\t\t#write: %lld\n", get_total_write(sfd, i));
 		free(path);
 	}
 
