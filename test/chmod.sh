@@ -1,5 +1,6 @@
 #!/bin/sh
-source ./common.sh
+
+. ./common.sh
 
 create_test_directories
 start_chiron
