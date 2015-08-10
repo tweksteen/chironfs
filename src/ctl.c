@@ -169,12 +169,27 @@ unsigned int get_max_replica(int fd)
 	return max_replica;
 }
 
+void usage(void)
+{
+	fprintf(stderr, "usage: chironctl <control_socket>\n");
+	fprintf(stderr, "Argument:\n"
+	     "    control_socket\n"
+	     "        This is the control socket, created using the '-c'\n"
+	     "        option of chironfs\n"
+	     "\n");
+}
+
 int main(int argc, char *argv[])
 {
 	unsigned int i, max_replica;
 	int sfd, res = 0;
 	char *path;
 	struct sockaddr_un addr;
+
+	if (argc != 2) {
+		usage();
+		exit(EXIT_FAILURE);
+	}
 
 	sfd = socket(AF_LOCAL, SOCK_STREAM, 0);
 	if (sfd == -1) {
