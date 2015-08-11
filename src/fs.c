@@ -138,24 +138,13 @@ char *xlate(const char *fname, char *rpath)
 	if (!rpath || !fname) {
 		return NULL;
 	}
-	if (!strcmp(rpath, ".")) {
-		flen = strlen(fname);
-		rname = malloc(1+flen);
-		if (rname) {
-			if (!strcmp(fname, "/")) {
-				strcpy(rname, currdir);
-			} else {
-				strcpy(rname, fname+1);
-			}
-		}
-	} else {
-		rlen = strlen(rpath);
-		flen = strlen(fname);
-		rname = malloc(1 + rlen + flen);
-		if (rname) {
-			strcpy(rname, rpath);
-			strcpy(rname + rlen, fname);
-		}
+
+	rlen = strlen(rpath);
+	flen = strlen(fname);
+	rname = malloc(1 + rlen + flen);
+	if (rname) {
+		strcpy(rname, rpath);
+		strcpy(rname + rlen, fname);
 	}
 	dbg("xlate %s\n", rname);
 	return rname;
