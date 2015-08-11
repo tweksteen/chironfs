@@ -11,9 +11,8 @@ AC_PROG_CC
 
 # Checks for libraries.
 AC_CHECK_LIB(pthread, pthread_create)
+# Should check if pkg-config is installed
 PKG_CHECK_MODULES([FUSE], [fuse])
-CFLAGS="$CFLAGS $FUSE_CFLAGS"
-LDFLAGS="$LDFLAGS $FUSE_LIBS"
 
 # Checks for header files.
 AC_HEADER_DIRENT
