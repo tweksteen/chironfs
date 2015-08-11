@@ -1,4 +1,5 @@
-/* Copyright 2015 Thiébaud Weksteen
+/* Copyright 2005-2008, Luis Furquim
+ * Copyright 2015 Thiébaud Weksteen
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

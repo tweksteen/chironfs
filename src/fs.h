@@ -85,8 +85,8 @@ struct chironfs_config {
 
 extern struct chironfs_config config;
 
-/* 
- * This structure is used to parse command line options using the 
+/*
+ * This structure is used to parse command line options using the
  * fuse_opt_parse wrapper. Its content is not used once initialisation
  * is finished.
  */

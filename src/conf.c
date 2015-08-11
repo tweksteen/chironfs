@@ -2,7 +2,7 @@
  * Copyright 2015 Thiébaud Weksteen
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 3 as 
+ * it under the terms of the GNU General Public License version 3 as
  * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
@@ -90,7 +90,7 @@ int do_mount(char *filesystems, char *mountpoint)
 	for (i=0; t[i]; t[i]=='=' ? i++ : *t++);
 	config.max_replica = i + 1;
 
-	/* 
+	/*
 	 * Increase process number of file descriptor up to max.
 	 * Should detect if root, then use system maximum per process.
 	 */
